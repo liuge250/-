@@ -124,3 +124,5 @@ mir-tools/output/
 
 # 游戏资源符号链接（部署环境不可用）
 server/public/mir-game/assets/
+!server/public/mir-game/assets/tilesets/
+!server/public/mir-game/assets/sprites/
