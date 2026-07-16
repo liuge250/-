@@ -1,23 +1,45 @@
-// 传奇先锋 - 主游戏场景
+// 传奇先锋 - 主游戏场景 (使用AI生成素材)
+const TILE_SIZE = 48;
+const MAP_WIDTH = 40;
+const MAP_HEIGHT = 30;
+
 class GameScene extends Phaser.Scene {
   constructor() {
     super({ key: 'GameScene' });
     this.player = null;
+    this.playerSprite = null;
     this.monsters = [];
+    this.monsterSprites = new Map();
     this.npcs = [];
     this.groundItems = [];
     this.damageTexts = [];
     this.cursors = null;
-    this.joystick = null;
     this.moveDir = { x: 0, y: 0 };
     this.lastMoveTime = 0;
-    this.moveInterval = 150; // ms between moves
+    this.moveInterval = 150;
     this.ws = null;
     this.wsConnected = false;
     this.mapData = null;
-    this.mapGraphics = null;
-    this.camera = null;
+    this.tilemapLayer = null;
     this.tickInterval = null;
+    this.hpBar = null;
+    this.mpBar = null;
+    this.expBar = null;
+    this.targetMonster = null;
+  }
+
+  preload() {
+    // 加载地图tileset
+    this.load.image('town_tileset', 'assets/tilesets/town_tileset.jpg');
+    this.load.image('cave_tileset', 'assets/tilesets/cave_tileset.jpg');
+    this.load.image('desert_tileset', 'assets/tilesets/desert_tileset.jpg');
+    this.load.image('temple_tileset', 'assets/tilesets/temple_tileset.jpg');
+
+    // 加载角色精灵
+    this.load.image('warrior_sprites', 'assets/sprites/warrior_sprites.jpg');
+    this.load.image('wizard_sprites', 'assets/sprites/wizard_sprites.jpg');
+    this.load.image('taoist_sprites', 'assets/sprites/taoist_sprites.jpg');
+    this.load.image('monsters_sprites', 'assets/sprites/monsters_sprites.jpg');
   }
 
   create() {
@@ -27,13 +49,16 @@ class GameScene extends Phaser.Scene {
       return;
     }
 
-    // 获取地图数据
-    this.mapData = window.MIR.gameData?.maps?.[char.mapId] || { id: char.mapId, name: '比奇城', width: 100, height: 100, tiles: [] };
+    this.charData = char;
+    this.mapData = window.MIR.gameData?.maps?.[char.mapId] || { id: char.mapId, name: '比奇省', width: MAP_WIDTH, height: MAP_HEIGHT };
 
-    // 创建地图图形
-    this.mapGraphics = this.add.graphics();
+    // 确定地图主题
+    this.mapTheme = this.getMapTheme(this.mapData.id);
 
-    // 创建玩家
+    // 渲染地图背景
+    this.renderMap();
+
+    // 创建玩家精灵
     this.createPlayer();
 
     // 生成怪物
@@ -48,579 +73,605 @@ class GameScene extends Phaser.Scene {
     // 键盘输入
     this.cursors = this.input.keyboard.createCursorKeys();
     this.wasd = this.input.keyboard.addKeys('W,S,A,D');
-    this.attackKey = this.input.keyboard.addKey('SPACE');
-    this.skillKeys = this.input.keyboard.addKeys(['Q', 'E', 'R', 'F']);
-
-    // 点击移动/攻击
-    this.input.on('pointerdown', (pointer) => {
-      if (pointer.x > 200 && pointer.x < this.cameras.main.width - 200) {
-        this.handleWorldClick(pointer);
-      }
-    });
 
     // 连接WebSocket
     this.connectWebSocket();
 
-    // 游戏主循环
-    this.tickInterval = this.time.addEvent({
-      delay: 100,
-      callback: () => this.gameTick(),
-      loop: true,
-    });
+    // 游戏循环
+    this.tickInterval = setInterval(() => this.gameTick(), 100);
 
-    // 绘制地图
-    this.drawMap();
+    // 显示地图名称
+    this.showMapName();
 
-    // 显示欢迎消息
-    this.showSystemMessage(`欢迎来到${GAME_CONFIG.MAP_NAMES[char.mapId] || '玛法大陆'}！`);
-  }
-
-  createPlayer() {
-    const char = window.MIR.character;
-    const classColor = GAME_CONFIG.CLASSES[char.class]?.color || '#FFFFFF';
-
-    // 玩家图形
-    this.player = {
-      x: char.x * GAME_CONFIG.TILE_SIZE,
-      y: char.y * GAME_CONFIG.TILE_SIZE,
-      graphics: this.add.graphics(),
-      nameText: null,
-      hpBar: null,
-      direction: char.direction || 6,
-      isMoving: false,
-      targetX: char.x * GAME_CONFIG.TILE_SIZE,
-      targetY: char.y * GAME_CONFIG.TILE_SIZE,
-      char: char,
-    };
-
-    this.drawPlayer();
-
-    // 名字
-    this.player.nameText = this.add.text(this.player.x, this.player.y - 40, char.name, {
-      fontFamily: 'sans-serif',
-      fontSize: '12px',
-      color: '#FFFFFF',
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5);
-
-    // 相机跟随
-    this.cameras.main.startFollow(this.player.graphics, true, 0.1, 0.1);
+    // 设置相机跟随玩家
+    this.cameras.main.startFollow(this.playerSprite, true, 0.1, 0.1);
     this.cameras.main.setZoom(1);
   }
 
-  drawPlayer() {
-    const g = this.player.graphics;
+  getMapTheme(mapId) {
+    const id = parseInt(mapId) || 0;
+    if (id === 0 || id === 1) return 'town';      // 比奇省
+    if (id === 3) return 'desert';                  // 盟重省
+    if (id === 4) return 'town';                    // 毒蛇山谷
+    if (id >= 100 && id < 200) return 'cave';      // 洞穴类
+    if (id >= 200 && id < 300) return 'temple';    // 寺庙类
+    if (id >= 300 && id < 400) return 'cave';      // 地牢类
+    return 'town';
+  }
+
+  renderMap() {
+    const theme = this.mapTheme;
+    const tilesetKey = `${theme}_tileset`;
+
+    // 创建大地色背景
+    const bgColors = {
+      town: 0x3a5c3a,
+      cave: 0x1a1a2e,
+      desert: 0x8b7355,
+      temple: 0x4a3728
+    };
+
+    // 创建tilemap
+    const mapWidth = MAP_WIDTH;
+    const mapHeight = MAP_HEIGHT;
+
+    // 用tileset图片平铺地面
+    const tilesetTexture = this.textures.get(tilesetKey);
+    const tileW = 64;
+    const tileH = 64;
+
+    // 创建地面层 - 使用tileset图片的裁剪区域
+    for (let y = 0; y < mapHeight; y++) {
+      for (let x = 0; x < mapWidth; x++) {
+        // 从tileset中随机选择一个tile区域
+        const srcX = (Math.floor(Math.random() * 4)) * tileW;
+        const srcY = (Math.floor(Math.random() * 4)) * tileH;
+
+        const tile = this.add.image(x * TILE_SIZE + TILE_SIZE / 2, y * TILE_SIZE + TILE_SIZE / 2, tilesetKey);
+        tile.setCrop(srcX, srcY, tileW, tileH);
+        tile.setDisplaySize(TILE_SIZE, TILE_SIZE);
+        tile.setDepth(0);
+      }
+    }
+
+    // 创建边界墙壁
+    const wallColor = {
+      town: 0x5c4033,
+      cave: 0x2d2d44,
+      desert: 0x6b5b3a,
+      temple: 0x5c3a28
+    };
+
+    // 添加一些装饰物
+    this.addDecorations(theme);
+
+    // 地图边界
+    const graphics = this.add.graphics();
+    graphics.fillStyle(wallColor[theme] || 0x333333, 0.8);
+    // 上边界
+    graphics.fillRect(0, -TILE_SIZE, mapWidth * TILE_SIZE, TILE_SIZE);
+    // 下边界
+    graphics.fillRect(0, mapHeight * TILE_SIZE, mapWidth * TILE_SIZE, TILE_SIZE);
+    // 左边界
+    graphics.fillRect(-TILE_SIZE, 0, TILE_SIZE, mapHeight * TILE_SIZE);
+    // 右边界
+    graphics.fillRect(mapWidth * TILE_SIZE, 0, TILE_SIZE, mapHeight * TILE_SIZE);
+    graphics.setDepth(5);
+  }
+
+  addDecorations(theme) {
+    const mapWidth = MAP_WIDTH;
+    const mapHeight = MAP_HEIGHT;
+    const decoCount = 15 + Math.floor(Math.random() * 10);
+
+    for (let i = 0; i < decoCount; i++) {
+      const x = (2 + Math.floor(Math.random() * (mapWidth - 4))) * TILE_SIZE + TILE_SIZE / 2;
+      const y = (2 + Math.floor(Math.random() * (mapHeight - 4))) * TILE_SIZE + TILE_SIZE / 2;
+
+      const graphics = this.add.graphics();
+      graphics.setDepth(2);
+
+      if (theme === 'town') {
+        // 树木
+        if (Math.random() > 0.5) {
+          graphics.fillStyle(0x2d5a27, 0.9);
+          graphics.fillCircle(0, -10, 18);
+          graphics.fillStyle(0x5c4033, 1);
+          graphics.fillRect(-4, 0, 8, 15);
+        } else {
+          // 石头
+          graphics.fillStyle(0x888888, 0.8);
+          graphics.fillEllipse(0, 0, 20, 14);
+        }
+      } else if (theme === 'cave') {
+        // 钟乳石
+        graphics.fillStyle(0x4a4a6a, 0.8);
+        graphics.fillTriangle(-8, 10, 8, 10, 0, -15);
+      } else if (theme === 'desert') {
+        // 仙人掌或岩石
+        if (Math.random() > 0.5) {
+          graphics.fillStyle(0x2d5a27, 0.9);
+          graphics.fillRect(-4, -20, 8, 25);
+          graphics.fillRect(-12, -12, 8, 4);
+          graphics.fillRect(4, -8, 8, 4);
+        } else {
+          graphics.fillStyle(0x8b7355, 0.8);
+          graphics.fillEllipse(0, 0, 22, 16);
+        }
+      } else {
+        // 蜡烛或柱子
+        graphics.fillStyle(0xc4a35a, 0.9);
+        graphics.fillRect(-5, -20, 10, 25);
+        graphics.fillStyle(0xff9900, 0.8);
+        graphics.fillCircle(0, -24, 5);
+      }
+
+      graphics.setPosition(x, y);
+      graphics.setDepth(2);
+    }
+  }
+
+  createPlayer() {
+    const char = this.charData;
+    const spriteKey = `${char.class}_sprites`;
+
+    // 创建玩家精灵
+    const startX = (MAP_WIDTH / 2) * TILE_SIZE;
+    const startY = (MAP_HEIGHT / 2) * TILE_SIZE;
+
+    // 玩家身体
+    this.playerSprite = this.add.graphics();
+    this.drawCharacter(this.playerSprite, char.class, char.level);
+    this.playerSprite.setPosition(startX, startY);
+    this.playerSprite.setDepth(10);
+
+    // 玩家名称
+    this.playerNameText = this.add.text(startX, startY - 35, char.name, {
+      fontSize: '12px',
+      color: '#ffffff',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3
+    });
+    this.playerNameText.setOrigin(0.5);
+    this.playerNameText.setDepth(11);
+
+    // 玩家数据
+    this.player = {
+      x: startX,
+      y: startY,
+      char: char,
+      hp: char.curHp || char.stats.hp,
+      maxHp: char.stats.hp,
+      mp: char.curMp || char.stats.mp,
+      maxMp: char.stats.mp,
+      exp: char.curExp || 0,
+      maxExp: char.stats.maxExp || 100,
+      level: char.level || 1,
+      class: char.class,
+      attackCooldown: 0
+    };
+
+    this.cameras.main.setBounds(0, 0, MAP_WIDTH * TILE_SIZE, MAP_HEIGHT * TILE_SIZE);
+    this.cameras.main.scrollX = startX - this.cameras.main.width / 2;
+    this.cameras.main.scrollY = startY - this.cameras.main.height / 2;
+  }
+
+  drawCharacter(g, charClass, level) {
     g.clear();
-    const char = this.player.char;
-    const classColor = GAME_CONFIG.CLASSES[char.class]?.color || '#FFFFFF';
-    const color = Phaser.Display.Color.HexStringToColor(classColor).color;
+    const colors = {
+      warrior: { body: 0x8b4513, armor: 0xc0c0c0, weapon: 0xdaa520 },
+      wizard: { body: 0x4b0082, armor: 0x6a5acd, weapon: 0x9370db },
+      taoist: { body: 0x006400, armor: 0x90ee90, weapon: 0xf0e68c }
+    };
+    const c = colors[charClass] || colors.warrior;
 
     // 身体
-    g.fillStyle(color, 0.9);
-    g.fillRoundedRect(this.player.x - 16, this.player.y - 20, 32, 40, 4);
+    g.fillStyle(c.armor, 1);
+    g.fillRoundedRect(-12, -8, 24, 28, 4);
 
     // 头
-    g.fillStyle(0xFFDBAC, 0.9);
-    g.fillCircle(this.player.x, this.player.y - 28, 12);
+    g.fillStyle(0xffdbac, 1);
+    g.fillCircle(0, -16, 10);
 
-    // 职业标识
-    g.fillStyle(0x000000, 0.5);
-    g.fillCircle(this.player.x, this.player.y - 28, 4);
-    g.fillStyle(color, 1);
-    g.fillCircle(this.player.x, this.player.y - 28, 3);
+    // 头发/帽子
+    g.fillStyle(c.body, 1);
+    g.fillRoundedRect(-10, -26, 20, 12, 4);
+
+    // 武器
+    g.fillStyle(c.weapon, 1);
+    if (charClass === 'warrior') {
+      g.fillRect(14, -20, 4, 30);
+      g.fillRect(10, -22, 12, 4);
+    } else if (charClass === 'wizard') {
+      g.fillRect(14, -25, 3, 35);
+      g.fillCircle(15, -28, 5);
+    } else {
+      g.fillRect(14, -15, 3, 25);
+      // 扇子
+      g.fillStyle(0xf5f5dc, 0.9);
+      g.fillPie(18, -18, 10, 0, Math.PI);
+    }
+
+    // 等级标记
+    if (level >= 10) {
+      g.fillStyle(0xffd700, 0.8);
+      g.fillStar?.(0, -32, 5, 6, 3) || g.fillCircle(0, -32, 4);
+    }
   }
 
   spawnMonsters() {
-    const char = window.MIR.character;
-    const mapId = char.mapId;
-    const spawns = window.MIR.gameData?.mapSpawns?.[mapId] || [];
+    const spawns = window.MIR.gameData?.mapSpawns?.[this.mapData.id] || [];
+    const monsterList = window.MIR.gameData?.monsters || [];
 
-    // 限制每屏最多显示20个怪物
-    const maxMonsters = 20;
-    const playerTileX = char.x;
-    const playerTileY = char.y;
+    // 如果没有刷新数据，生成一些默认怪物
+    const monsterCount = Math.max(spawns.length, 8);
 
-    // 按距离排序，取最近的
-    const sortedSpawns = spawns
-      .map(s => ({
-        ...s,
-        dist: Math.abs(s.x - playerTileX) + Math.abs(s.y - playerTileY)
-      }))
-      .sort((a, b) => a.dist - b.dist)
-      .slice(0, maxMonsters);
+    for (let i = 0; i < monsterCount; i++) {
+      const spawn = spawns[i] || null;
+      const monsterData = spawn
+        ? monsterList.find(m => m.id === spawn.monsterId) || monsterList[Math.floor(Math.random() * monsterList.length)]
+        : monsterList[Math.floor(Math.random() * Math.min(monsterList.length, 20))];
 
-    sortedSpawns.forEach((spawn, i) => {
-      const monsterData = window.MIR.gameData?.monsters?.[spawn.monsterId];
-      if (!monsterData) return;
+      if (!monsterData) continue;
 
-      const mx = spawn.x * GAME_CONFIG.TILE_SIZE;
-      const my = spawn.y * GAME_CONFIG.TILE_SIZE;
+      const x = spawn
+        ? spawn.x * TILE_SIZE
+        : (3 + Math.floor(Math.random() * (MAP_WIDTH - 6))) * TILE_SIZE;
+      const y = spawn
+        ? spawn.y * TILE_SIZE
+        : (3 + Math.floor(Math.random() * (MAP_HEIGHT - 6))) * TILE_SIZE;
 
       const monster = {
-        id: `m_${i}`,
+        id: `m_${i}_${Date.now()}`,
         data: monsterData,
-        x: mx,
-        y: my,
-        spawnX: mx,
-        spawnY: my,
-        hp: monsterData.MaxHP,
-        maxHp: monsterData.MaxHP,
-        graphics: this.add.graphics(),
-        nameText: null,
-        hpBar: null,
+        x: x,
+        y: y,
+        homeX: x,
+        homeY: y,
+        hp: monsterData.maxHp || 50,
+        maxHp: monsterData.maxHp || 50,
         alive: true,
-        targetX: mx,
-        targetY: my,
-        moveTimer: 0,
-        state: 'idle', // idle, chase, attack, return
-        aggroRange: 5 * GAME_CONFIG.TILE_SIZE,
+        spawnX: x,
+        spawnY: y,
+        state: 'idle',
+        targetX: x,
+        targetY: y,
+        lastMove: 0,
+        aggroRange: monsterData.viewRange || 5,
+        attackRange: 1.5
       };
 
-      this.drawMonster(monster);
-
-      // 名字
-      monster.nameText = this.add.text(mx, my - 35, monsterData.Name, {
-        fontFamily: 'sans-serif',
-        fontSize: '11px',
-        color: '#FF8A80',
-        stroke: '#000000',
-        strokeThickness: 2,
-      }).setOrigin(0.5);
-
-      // 血条背景
-      monster.hpBar = this.add.graphics();
-      this.drawMonsterHpBar(monster);
-
       this.monsters.push(monster);
-    });
+      this.drawMonster(monster);
+    }
   }
 
   drawMonster(monster) {
-    const g = monster.graphics;
-    g.clear();
+    const g = this.add.graphics();
+    const md = monster.data;
 
-    if (!monster.alive) return;
+    // 根据怪物类型决定外观
+    const monsterType = md.id % 6;
+    let bodyColor, eyeColor, size;
 
-    const data = monster.data;
-    const isBoss = data.AI >= 64;
-    const size = isBoss ? 24 : 18;
+    if (md.monsterType === 'creature' || md.hp < 100) {
+      // 小型怪物 - 鸡/鹿/猪
+      bodyColor = [0x8B4513, 0xDEB887, 0xFFC0CB, 0x808080][monsterType % 4];
+      eyeColor = 0x000000;
+      size = 12;
 
-    // 身体颜色根据怪物类型
-    let bodyColor = 0x8B4513; // 默认棕色
-    if (data.EffectType === 4) bodyColor = 0x4A0080; // 紫（Boss）
-    else if (data.Level > 30) bodyColor = 0xCC0000; // 红（高级）
-    else if (data.Level > 15) bodyColor = 0x006600; // 绿（中级）
+      g.fillStyle(bodyColor, 1);
+      g.fillEllipse(0, 0, size * 2, size * 1.5);
+      g.fillStyle(eyeColor, 1);
+      g.fillCircle(-4, -4, 2);
+      g.fillCircle(4, -4, 2);
+    } else if (md.hp < 500) {
+      // 中型怪物 - 狼/蜘蛛/半兽人
+      bodyColor = [0x4a4a4a, 0x2d2d2d, 0x556b2f, 0x8b0000][monsterType % 4];
+      eyeColor = 0xff0000;
+      size = 18;
 
-    // 身体
-    g.fillStyle(bodyColor, 0.9);
-    g.fillRoundedRect(monster.x - size, monster.y - size, size * 2, size * 2, 4);
+      g.fillStyle(bodyColor, 1);
+      g.fillRoundedRect(-size, -size, size * 2, size * 2, 6);
+      g.fillStyle(eyeColor, 1);
+      g.fillCircle(-6, -6, 3);
+      g.fillCircle(6, -6, 3);
+      // 牙齿
+      g.fillStyle(0xffffff, 1);
+      g.fillRect(-4, 6, 3, 5);
+      g.fillRect(1, 6, 3, 5);
+    } else {
+      // 大型怪物/Boss
+      bodyColor = [0x8b0000, 0x4b0082, 0x006400, 0x2f4f4f][monsterType % 4];
+      eyeColor = 0xff4500;
+      size = 24;
 
-    // 眼睛
-    g.fillStyle(0xFF0000, 0.8);
-    g.fillCircle(monster.x - size / 3, monster.y - size / 3, 3);
-    g.fillCircle(monster.x + size / 3, monster.y - size / 3, 3);
-
-    // Boss标识
-    if (isBoss) {
-      g.lineStyle(2, 0xFFD700, 0.8);
-      g.strokeRoundedRect(monster.x - size - 2, monster.y - size - 2, (size + 2) * 2, (size + 2) * 2, 4);
+      g.fillStyle(bodyColor, 1);
+      g.fillRoundedRect(-size, -size, size * 2, size * 2, 8);
+      // 角
+      g.fillStyle(0xdaa520, 1);
+      g.fillTriangle(-size + 4, -size, -size + 10, -size, -size + 7, -size - 12);
+      g.fillTriangle(size - 10, -size, size - 4, -size, size - 7, -size - 12);
+      // 眼睛
+      g.fillStyle(eyeColor, 1);
+      g.fillCircle(-8, -6, 4);
+      g.fillCircle(8, -6, 4);
+      g.fillStyle(0x000000, 1);
+      g.fillCircle(-8, -6, 2);
+      g.fillCircle(8, -6, 2);
     }
-  }
 
-  drawMonsterHpBar(monster) {
-    if (!monster.hpBar) return;
-    monster.hpBar.clear();
+    g.setPosition(monster.x, monster.y);
+    g.setDepth(8);
 
-    if (!monster.alive || monster.hp >= monster.maxHp) return;
+    // 怪物名称
+    const nameText = this.add.text(monster.x, monster.y - size - 15, md.name || '未知怪物', {
+      fontSize: '10px',
+      color: monster.hp > 500 ? '#ff4444' : '#ffcc00',
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    nameText.setOrigin(0.5);
+    nameText.setDepth(9);
 
-    const barW = 40;
-    const barH = 4;
-    const ratio = Math.max(0, monster.hp / monster.maxHp);
+    // HP条
+    const hpBarBg = this.add.graphics();
+    hpBarBg.fillStyle(0x333333, 0.8);
+    hpBarBg.fillRect(monster.x - 20, monster.y - size - 8, 40, 4);
+    hpBarBg.setDepth(9);
 
-    // 背景
-    monster.hpBar.fillStyle(0x000000, 0.7);
-    monster.hpBar.fillRect(monster.x - barW / 2, monster.y - 30, barW, barH);
+    const hpBar = this.add.graphics();
+    hpBar.fillStyle(0xff0000, 1);
+    hpBar.fillRect(monster.x - 20, monster.y - size - 8, 40, 4);
+    hpBar.setDepth(10);
 
-    // 血条
-    const hpColor = ratio > 0.5 ? 0x4CAF50 : ratio > 0.25 ? 0xFF9800 : 0xF44336;
-    monster.hpBar.fillStyle(hpColor, 1);
-    monster.hpBar.fillRect(monster.x - barW / 2, monster.y - 30, barW * ratio, barH);
+    this.monsterSprites.set(monster.id, { graphics: g, name: nameText, hpBarBg: hpBarBg, hpBar: hpBar, size: size });
   }
 
   createUI() {
-    const w = this.cameras.main.width;
-    const h = this.cameras.main.height;
-    const char = window.MIR.character;
-    const C = GAME_CONFIG.COLORS;
+    const width = this.scale.width;
+    const height = this.scale.height;
 
-    // UI容器（固定位置，不随相机移动）
-    this.uiContainer = this.add.container(0, 0);
-    this.uiContainer.setScrollFactor(0);
-    this.uiContainer.setDepth(100);
+    // 固定UI不跟随相机
+    const uiLayer = this.add.container(0, 0);
+    uiLayer.setScrollFactor(0);
+    uiLayer.setDepth(100);
 
-    // === 底部面板 ===
-    const bottomPanel = this.add.graphics();
-    bottomPanel.fillStyle(0x0A0A0F, 0.85);
-    bottomPanel.fillRect(0, h - 100, w, 100);
-    bottomPanel.lineStyle(1, 0xC9A96E, 0.3);
-    bottomPanel.strokeRect(0, h - 100, w, 100);
-    this.uiContainer.add(bottomPanel);
+    // 顶部信息栏
+    const topBar = this.add.graphics();
+    topBar.fillStyle(0x000000, 0.7);
+    topBar.fillRoundedRect(10, 10, 250, 80, 8);
+    uiLayer.add(topBar);
+
+    // 角色名和等级
+    const charInfo = this.add.text(20, 15, `${this.charData.name} Lv.${this.player.level}`, {
+      fontSize: '14px',
+      color: '#ffd700',
+      fontStyle: 'bold'
+    });
+    uiLayer.add(charInfo);
 
     // HP条
-    const hpBarX = 20;
-    const hpBarY = h - 80;
-    const barW = 200;
-    const barH = 20;
+    const hpLabel = this.add.text(20, 35, 'HP', { fontSize: '11px', color: '#ff4444' });
+    uiLayer.add(hpLabel);
 
-    const hpBg = this.add.rectangle(hpBarX + barW / 2, hpBarY, barW, barH, 0x1A1A2E);
-    hpBg.setStrokeStyle(1, 0x333333);
-    this.uiContainer.add(hpBg);
+    this.hpBarBg = this.add.graphics();
+    this.hpBarBg.fillStyle(0x333333, 0.8);
+    this.hpBarBg.fillRoundedRect(45, 35, 150, 14, 4);
+    uiLayer.add(this.hpBarBg);
 
-    this.hpBarFill = this.add.rectangle(hpBarX, hpBarY, barW, barH, Phaser.Display.Color.HexStringToColor(C.HP).color);
-    this.hpBarFill.setOrigin(0, 0.5);
-    this.uiContainer.add(this.hpBarFill);
+    this.hpBarFill = this.add.graphics();
+    this.hpBarFill.fillStyle(0xff3333, 1);
+    this.hpBarFill.fillRoundedRect(45, 35, 150, 14, 4);
+    uiLayer.add(this.hpBarFill);
 
-    this.hpText = this.add.text(hpBarX + barW / 2, hpBarY, `${char.stats.HP}/${char.stats.MaxHP}`, {
-      fontFamily: 'monospace',
-      fontSize: '12px',
-      color: '#FFFFFF',
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5);
-    this.uiContainer.add(this.hpText);
+    this.hpText = this.add.text(120, 36, `${this.player.hp}/${this.player.maxHp}`, {
+      fontSize: '10px', color: '#ffffff', stroke: '#000000', strokeThickness: 2
+    });
+    this.hpText.setOrigin(0.5);
+    uiLayer.add(this.hpText);
 
     // MP条
-    const mpBarY = hpBarY + 28;
-    const mpBg = this.add.rectangle(hpBarX + barW / 2, mpBarY, barW, barH, 0x1A1A2E);
-    mpBg.setStrokeStyle(1, 0x333333);
-    this.uiContainer.add(mpBg);
+    const mpLabel = this.add.text(20, 53, 'MP', { fontSize: '11px', color: '#4444ff' });
+    uiLayer.add(mpLabel);
 
-    this.mpBarFill = this.add.rectangle(hpBarX, mpBarY, barW, barH, Phaser.Display.Color.HexStringToColor(C.MP).color);
-    this.mpBarFill.setOrigin(0, 0.5);
-    this.uiContainer.add(this.mpBarFill);
+    this.mpBarBg = this.add.graphics();
+    this.mpBarBg.fillStyle(0x333333, 0.8);
+    this.mpBarBg.fillRoundedRect(45, 53, 150, 14, 4);
+    uiLayer.add(this.mpBarBg);
 
-    this.mpText = this.add.text(hpBarX + barW / 2, mpBarY, `${char.stats.MP}/${char.stats.MaxMP}`, {
-      fontFamily: 'monospace',
-      fontSize: '12px',
-      color: '#FFFFFF',
-      stroke: '#000000',
-      strokeThickness: 2,
-    }).setOrigin(0.5);
-    this.uiContainer.add(this.mpText);
+    this.mpBarFill = this.add.graphics();
+    this.mpBarFill.fillStyle(0x3333ff, 1);
+    this.mpBarFill.fillRoundedRect(45, 53, 150, 14, 4);
+    uiLayer.add(this.mpBarFill);
+
+    this.mpText = this.add.text(120, 54, `${this.player.mp}/${this.player.maxMp}`, {
+      fontSize: '10px', color: '#ffffff', stroke: '#000000', strokeThickness: 2
+    });
+    this.mpText.setOrigin(0.5);
+    uiLayer.add(this.mpText);
 
     // EXP条
-    const expBarY = mpBarY + 28;
-    const expBg = this.add.rectangle(hpBarX + barW / 2, expBarY, barW, 10, 0x1A1A2E);
-    expBg.setStrokeStyle(1, 0x333333);
-    this.uiContainer.add(expBg);
+    const expLabel = this.add.text(20, 71, 'EXP', { fontSize: '11px', color: '#44ff44' });
+    uiLayer.add(expLabel);
 
-    this.expBarFill = this.add.rectangle(hpBarX, expBarY, barW, 10, Phaser.Display.Color.HexStringToColor(C.EXP).color);
-    this.expBarFill.setOrigin(0, 0.5);
-    this.uiContainer.add(this.expBarFill);
+    this.expBarBg = this.add.graphics();
+    this.expBarBg.fillStyle(0x333333, 0.8);
+    this.expBarBg.fillRoundedRect(45, 71, 150, 14, 4);
+    uiLayer.add(this.expBarBg);
 
-    this.levelText = this.add.text(hpBarX + barW + 10, expBarY, `Lv.${char.level}`, {
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      color: '#C9A96E',
-      fontStyle: 'bold',
-    }).setOrigin(0, 0.5);
-    this.uiContainer.add(this.levelText);
+    this.expBarFill = this.add.graphics();
+    this.expBarFill.fillStyle(0x33ff33, 1);
+    this.expBarFill.fillRoundedRect(45, 71, 0, 14, 4);
+    uiLayer.add(this.expBarFill);
 
-    // === 技能栏 ===
-    const skillBarX = w / 2 - 100;
-    const skillBarY = h - 55;
-    const skillNames = ['普攻', '技能1', '技能2', '技能3'];
-    const skillKeys = ['SPACE', 'Q', 'E', 'R'];
+    this.expText = this.add.text(120, 72, `${this.player.exp}/${this.player.maxExp}`, {
+      fontSize: '10px', color: '#ffffff', stroke: '#000000', strokeThickness: 2
+    });
+    this.expText.setOrigin(0.5);
+    uiLayer.add(this.expText);
 
-    for (let i = 0; i < 4; i++) {
-      const sx = skillBarX + i * 55;
-      const skillBg = this.add.rectangle(sx, skillBarY, 48, 48, 0x1A1A2E, 0.9);
-      skillBg.setStrokeStyle(2, 0xC9A96E, 0.5);
-      this.uiContainer.add(skillBg);
+    // 小地图
+    const miniMap = this.add.graphics();
+    miniMap.fillStyle(0x000000, 0.6);
+    miniMap.fillRoundedRect(width - 130, 10, 120, 90, 6);
+    miniMap.setScrollFactor(0);
+    miniMap.setDepth(100);
 
-      const skillText = this.add.text(sx, skillBarY - 5, skillNames[i], {
-        fontFamily: 'sans-serif',
-        fontSize: '11px',
-        color: '#E8E8E8',
-      }).setOrigin(0.5);
-      this.uiContainer.add(skillText);
+    this.miniMapText = this.add.text(width - 70, 15, this.mapData.name || '未知地图', {
+      fontSize: '11px', color: '#ffffff', fontStyle: 'bold'
+    });
+    this.miniMapText.setOrigin(0.5);
+    this.miniMapText.setScrollFactor(0);
+    this.miniMapText.setDepth(101);
 
-      const keyText = this.add.text(sx, skillBarY + 16, skillKeys[i], {
-        fontFamily: 'monospace',
-        fontSize: '9px',
-        color: '#888888',
-      }).setOrigin(0.5);
-      this.uiContainer.add(keyText);
+    // 迷你地图上的点
+    this.miniMapDot = this.add.graphics();
+    this.miniMapDot.setScrollFactor(0);
+    this.miniMapDot.setDepth(101);
 
-      // 点击技能
-      skillBg.setInteractive({ useHandCursor: true });
-      skillBg.on('pointerdown', () => this.useSkill(i));
-    }
+    // 底部技能栏
+    const skillBar = this.add.graphics();
+    skillBar.fillStyle(0x000000, 0.7);
+    skillBar.fillRoundedRect(width / 2 - 150, height - 60, 300, 50, 8);
+    skillBar.setScrollFactor(0);
+    skillBar.setDepth(100);
 
-    // === 金币显示 ===
-    this.goldText = this.add.text(w - 20, h - 85, `金币: ${char.gold}`, {
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      color: '#FFD700',
-    }).setOrigin(1, 0);
-    this.uiContainer.add(this.goldText);
+    // 技能按钮
+    const skills = ['攻击', '技能1', '技能2', '技能3', '药品'];
+    const skillColors = [0xff4444, 0x4444ff, 0x44ff44, 0xffff44, 0xff44ff];
+    this.skillButtons = [];
 
-    // === 地图名 ===
-    const mapName = GAME_CONFIG.MAP_NAMES[char.mapId] || `地图${char.mapId}`;
-    this.mapNameText = this.add.text(w - 20, 20, mapName, {
-      fontFamily: 'serif',
-      fontSize: '18px',
-      color: '#C9A96E',
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(1, 0);
-    this.uiContainer.add(this.mapNameText);
+    skills.forEach((skill, i) => {
+      const bx = width / 2 - 120 + i * 60;
+      const by = height - 45;
 
-    // === 坐标 ===
-    this.coordText = this.add.text(w - 20, 45, `(${char.x}, ${char.y})`, {
-      fontFamily: 'monospace',
-      fontSize: '12px',
-      color: '#888888',
-    }).setOrigin(1, 0);
-    this.uiContainer.add(this.coordText);
+      const btn = this.add.graphics();
+      btn.fillStyle(skillColors[i], 0.3);
+      btn.fillRoundedRect(bx - 22, by - 15, 44, 30, 6);
+      btn.lineStyle(1, skillColors[i], 0.8);
+      btn.strokeRoundedRect(bx - 22, by - 15, 44, 30, 6);
+      btn.setScrollFactor(0);
+      btn.setDepth(101);
 
-    // === 小地图 ===
-    this.createMiniMap();
+      const txt = this.add.text(bx, by, skill, {
+        fontSize: '11px', color: '#ffffff'
+      });
+      txt.setOrigin(0.5);
+      txt.setScrollFactor(0);
+      txt.setDepth(102);
 
-    // === 消息日志 ===
-    this.messageLog = [];
-    this.messageTexts = [];
+      // 点击事件
+      const hitArea = this.add.rectangle(bx, by, 44, 30);
+      hitArea.setScrollFactor(0);
+      hitArea.setDepth(103);
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on('pointerdown', () => this.useSkill(i));
+      this.skillButtons.push({ btn, txt, hitArea });
+    });
+
+    // 消息日志
+    this.msgLog = [];
+    this.msgTexts = [];
     for (let i = 0; i < 5; i++) {
-      const t = this.add.text(20, 60 + i * 20, '', {
-        fontFamily: 'sans-serif',
-        fontSize: '12px',
-        color: '#AAAAAA',
-        stroke: '#000000',
-        strokeThickness: 2,
+      const t = this.add.text(10, height - 120 - i * 18, '', {
+        fontSize: '11px', color: '#cccccc', stroke: '#000000', strokeThickness: 2
       });
       t.setScrollFactor(0);
       t.setDepth(100);
-      this.messageTexts.push(t);
+      t.setAlpha(1 - i * 0.2);
+      this.msgTexts.push(t);
     }
-
-    // === 背包按钮 ===
-    const bagBtn = this.add.text(w - 60, h - 55, '背包', {
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      color: '#C9A96E',
-      backgroundColor: '#1A1A2E',
-      padding: { x: 10, y: 8 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    bagBtn.setScrollFactor(0);
-    bagBtn.setDepth(100);
-    bagBtn.on('pointerdown', () => this.toggleInventory());
-
-    // 背包面板（默认隐藏）
-    this.inventoryVisible = false;
-    this.createInventoryPanel();
-  }
-
-  createMiniMap() {
-    const w = this.cameras.main.width;
-    const mmSize = 120;
-    const mmX = w - mmSize - 10;
-    const mmY = 70;
-
-    const mmBg = this.add.rectangle(mmX + mmSize / 2, mmY + mmSize / 2, mmSize, mmSize, 0x0A0A0F, 0.8);
-    mmBg.setStrokeStyle(1, 0xC9A96E, 0.5);
-    mmBg.setScrollFactor(0);
-    mmBg.setDepth(100);
-
-    this.miniMap = this.add.graphics();
-    this.miniMap.setScrollFactor(0);
-    this.miniMap.setDepth(101);
-    this.miniMapX = mmX;
-    this.miniMapY = mmY;
-    this.miniMapSize = mmSize;
-  }
-
-  drawMiniMap() {
-    this.miniMap.clear();
-    const char = window.MIR.character;
-    const scale = this.miniMapSize / 100; // 假设地图100x100
-
-    // 玩家点
-    this.miniMap.fillStyle(0x00FF00, 1);
-    this.miniMap.fillCircle(
-      this.miniMapX + char.x * scale,
-      this.miniMapY + char.y * scale,
-      3
-    );
-
-    // 怪物点
-    this.monsters.forEach(m => {
-      if (!m.alive) return;
-      const mx = m.x / GAME_CONFIG.TILE_SIZE;
-      const my = m.y / GAME_CONFIG.TILE_SIZE;
-      this.miniMap.fillStyle(0xFF0000, 0.7);
-      this.miniMap.fillCircle(
-        this.miniMapX + mx * scale,
-        this.miniMapY + my * scale,
-        2
-      );
-    });
   }
 
   createJoystick() {
-    const h = this.cameras.main.height;
-    const jx = 100;
-    const jy = h - 200;
+    const width = this.scale.width;
+    const height = this.scale.height;
 
-    // 摇杆底座
-    this.joystickBase = this.add.circle(jx, jy, 50, 0x1A1A2E, 0.5);
-    this.joystickBase.setStrokeStyle(2, 0xC9A96E, 0.3);
+    // 虚拟摇杆区域 (左下角)
+    const jx = 80;
+    const jy = height - 140;
+
+    // 底座
+    this.joystickBase = this.add.graphics();
+    this.joystickBase.fillStyle(0xffffff, 0.15);
+    this.joystickBase.fillCircle(jx, jy, 50);
+    this.joystickBase.lineStyle(2, 0xffffff, 0.3);
+    this.joystickBase.strokeCircle(jx, jy, 50);
     this.joystickBase.setScrollFactor(0);
     this.joystickBase.setDepth(100);
 
-    // 摇杆头
-    this.joystickHead = this.add.circle(jx, jy, 20, 0xC9A96E, 0.6);
-    this.joystickHead.setScrollFactor(0);
-    this.joystickHead.setDepth(101);
+    // 摇杆
+    this.joystickKnob = this.add.graphics();
+    this.joystickKnob.fillStyle(0xffffff, 0.4);
+    this.joystickKnob.fillCircle(jx, jy, 22);
+    this.joystickKnob.setScrollFactor(0);
+    this.joystickKnob.setDepth(101);
 
-    this.joystickBaseX = jx;
-    this.joystickBaseY = jy;
+    this.joystickCenter = { x: jx, y: jy };
     this.joystickActive = false;
 
     // 触摸事件
-    this.joystickBase.setInteractive();
-    this.joystickBase.on('pointerdown', () => { this.joystickActive = true; });
-    this.joystickBase.on('pointerup', () => {
-      this.joystickActive = false;
-      this.joystickHead.setPosition(this.joystickBaseX, this.joystickBaseY);
-      this.moveDir.x = 0;
-      this.moveDir.y = 0;
+    this.input.on('pointerdown', (pointer) => {
+      if (pointer.x < 160 && pointer.y > height - 220) {
+        this.joystickActive = true;
+      }
     });
-    this.joystickBase.on('pointermove', (pointer) => {
+
+    this.input.on('pointermove', (pointer) => {
       if (!this.joystickActive) return;
-      const dx = pointer.x - this.joystickBaseX;
-      const dy = pointer.y - this.joystickBaseY;
+      if (pointer.x > 160 || pointer.y < height - 220) return;
+
+      const dx = pointer.x - this.joystickCenter.x;
+      const dy = pointer.y - this.joystickCenter.y;
       const dist = Math.sqrt(dx * dx + dy * dy);
       const maxDist = 40;
 
-      if (dist > maxDist) {
-        const angle = Math.atan2(dy, dx);
-        this.joystickHead.setPosition(
-          this.joystickBaseX + Math.cos(angle) * maxDist,
-          this.joystickBaseY + Math.sin(angle) * maxDist
-        );
-      } else {
-        this.joystickHead.setPosition(pointer.x, pointer.y);
-      }
+      const clampDist = Math.min(dist, maxDist);
+      const angle = Math.atan2(dy, dx);
 
-      // 计算方向
+      const knobX = this.joystickCenter.x + Math.cos(angle) * clampDist;
+      const knobY = this.joystickCenter.y + Math.sin(angle) * clampDist;
+
+      this.joystickKnob.clear();
+      this.joystickKnob.fillStyle(0xffffff, 0.5);
+      this.joystickKnob.fillCircle(knobX, knobY, 22);
+
       if (dist > 10) {
-        this.moveDir.x = dx / dist;
-        this.moveDir.y = dy / dist;
+        this.moveDir.x = Math.cos(angle);
+        this.moveDir.y = Math.sin(angle);
       } else {
         this.moveDir.x = 0;
         this.moveDir.y = 0;
       }
     });
-  }
 
-  createInventoryPanel() {
-    const w = this.cameras.main.width;
-    const h = this.cameras.main.height;
-    const panelW = 300;
-    const panelH = 400;
-
-    this.inventoryPanel = this.add.container(w / 2 - panelW / 2, h / 2 - panelH / 2);
-    this.inventoryPanel.setScrollFactor(0);
-    this.inventoryPanel.setDepth(200);
-    this.inventoryPanel.setVisible(false);
-
-    // 背景
-    const bg = this.add.rectangle(panelW / 2, panelH / 2, panelW, panelH, 0x1A1A2E, 0.95);
-    bg.setStrokeStyle(2, 0xC9A96E);
-    this.inventoryPanel.add(bg);
-
-    // 标题
-    const title = this.add.text(panelW / 2, 20, '背包', {
-      fontFamily: 'serif',
-      fontSize: '18px',
-      color: '#C9A96E',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-    this.inventoryPanel.add(title);
-
-    // 关闭按钮
-    const closeBtn = this.add.text(panelW - 15, 15, '✕', {
-      fontFamily: 'sans-serif',
-      fontSize: '18px',
-      color: '#888888',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
-    closeBtn.on('pointerdown', () => this.toggleInventory());
-    this.inventoryPanel.add(closeBtn);
-
-    // 物品列表
-    this.inventoryItems = [];
-    const char = window.MIR.character;
-    const items = char.inventory || [];
-
-    for (let i = 0; i < Math.min(items.length, 20); i++) {
-      const item = items[i];
-      const ix = 20 + (i % 5) * 55;
-      const iy = 50 + Math.floor(i / 5) * 55;
-
-      const itemBg = this.add.rectangle(ix + 22, iy + 22, 48, 48, 0x0A0A0F, 0.8);
-      const qualityColor = Phaser.Display.Color.HexStringToColor(GAME_CONFIG.QUALITY_COLORS[item.quality || 0] || '#B0BEC5').color;
-      itemBg.setStrokeStyle(1, qualityColor);
-      this.inventoryPanel.add(itemBg);
-
-      const nameText = this.add.text(ix + 22, iy + 18, item.name || '???', {
-        fontFamily: 'sans-serif',
-        fontSize: '9px',
-        color: Phaser.Display.Color.IntegerToColor(qualityColor).rgba,
-        wordWrap: { width: 44 },
-        align: 'center',
-      }).setOrigin(0.5);
-      this.inventoryPanel.add(nameText);
-
-      if (item.count > 1) {
-        const countText = this.add.text(ix + 40, iy + 40, `x${item.count}`, {
-          fontFamily: 'monospace',
-          fontSize: '10px',
-          color: '#FFFFFF',
-        }).setOrigin(1, 1);
-        this.inventoryPanel.add(countText);
-      }
-    }
-
-    if (items.length === 0) {
-      const emptyText = this.add.text(panelW / 2, panelH / 2, '背包为空', {
-        fontFamily: 'sans-serif',
-        fontSize: '14px',
-        color: '#555555',
-      }).setOrigin(0.5);
-      this.inventoryPanel.add(emptyText);
-    }
-  }
-
-  toggleInventory() {
-    this.inventoryVisible = !this.inventoryVisible;
-    this.inventoryPanel.setVisible(this.inventoryVisible);
+    this.input.on('pointerup', () => {
+      this.joystickActive = false;
+      this.moveDir.x = 0;
+      this.moveDir.y = 0;
+      this.joystickKnob.clear();
+      this.joystickKnob.fillStyle(0xffffff, 0.4);
+      this.joystickKnob.fillCircle(this.joystickCenter.x, this.joystickCenter.y, 22);
+    });
   }
 
   connectWebSocket() {
     try {
       const protocol = window.location.protocol === 'https:' ? 'wss:' : 'ws:';
-      const wsUrl = `${protocol}//${window.location.host}/game`;
+      const wsUrl = `${protocol}//${window.location.host}/game-ws`;
       this.ws = new WebSocket(wsUrl);
 
       this.ws.onopen = () => {
-        console.log('WebSocket connected');
         this.wsConnected = true;
-        // 发送加入游戏消息
+        this.addMessage('已连接游戏服务器');
+
+        // 发送加入游戏
         this.ws.send(JSON.stringify({
           type: 'join',
-          token: window.MIR.token,
-          character: window.MIR.character,
+          playerId: window.MIR.token,
+          characterId: this.charData.id
         }));
       };
 
@@ -628,512 +679,583 @@ class GameScene extends Phaser.Scene {
         try {
           const msg = JSON.parse(event.data);
           this.handleServerMessage(msg);
-        } catch (e) {
-          console.error('WS message error:', e);
-        }
+        } catch (e) {}
       };
 
       this.ws.onclose = () => {
         this.wsConnected = false;
-        // 3秒后重连
-        this.time.delayedCall(3000, () => this.connectWebSocket());
+        this.addMessage('服务器连接断开');
       };
 
-      this.ws.onerror = (err) => {
-        console.error('WebSocket error:', err);
+      this.ws.onerror = () => {
+        this.wsConnected = false;
       };
     } catch (e) {
-      console.error('WebSocket connection failed:', e);
+      this.wsConnected = false;
     }
   }
 
   handleServerMessage(msg) {
     switch (msg.type) {
-      case 'monster_update':
-        this.updateMonsterFromServer(msg);
-        break;
-      case 'damage':
-        this.showDamageText(msg.x, msg.y, msg.amount, msg.isCritical);
-        break;
-      case 'item_drop':
-        this.showGroundItem(msg);
-        break;
-      case 'level_up':
-        this.showSystemMessage(`恭喜升级！当前等级: ${msg.level}`);
-        break;
-      case 'player_update':
-        if (msg.character) {
-          window.MIR.character = msg.character;
+      case 'state':
+        // 服务器状态更新
+        if (msg.data) {
+          this.player.hp = msg.data.hp || this.player.hp;
+          this.player.mp = msg.data.mp || this.player.mp;
+          this.player.exp = msg.data.exp || this.player.exp;
+          this.player.level = msg.data.level || this.player.level;
           this.updateUI();
         }
+        break;
+      case 'damage':
+        this.showDamageText(msg.x, msg.y, msg.damage, msg.isCrit);
+        break;
+      case 'monster_died':
+        this.onMonsterDied(msg.monsterId);
+        break;
+      case 'item_drop':
+        this.showGroundItem(msg.x, msg.y, msg.item);
+        break;
+      case 'level_up':
+        this.addMessage(`恭喜升级! 当前等级: ${msg.level}`);
+        this.showLevelUpEffect();
         break;
     }
   }
 
-  handleWorldClick(pointer) {
-    const worldX = pointer.worldX;
-    const worldY = pointer.worldY;
+  gameTick() {
+    if (!this.player) return;
 
-    // 检查是否点击了怪物
-    const clickedMonster = this.monsters.find(m => {
-      if (!m.alive) return false;
-      const dist = Phaser.Math.Distance.Between(worldX, worldY, m.x, m.y);
-      return dist < 30;
+    const now = Date.now();
+
+    // 处理移动
+    this.handleMovement(now);
+
+    // 更新怪物AI
+    this.updateMonsters(now);
+
+    // 自动攻击最近的怪物
+    this.autoAttack(now);
+
+    // 更新UI
+    this.updateUI();
+
+    // 更新迷你地图
+    this.updateMiniMap();
+
+    // 清理伤害文字
+    this.damageTexts = this.damageTexts.filter(dt => {
+      dt.text.setY(dt.text.y - 1);
+      dt.text.setAlpha(dt.text.alpha - 0.02);
+      if (dt.text.alpha <= 0) {
+        dt.text.destroy();
+        return false;
+      }
+      return true;
     });
+  }
 
-    if (clickedMonster) {
-      // 攻击怪物
-      this.attackMonster(clickedMonster);
-    } else {
-      // 移动到点击位置
-      this.player.targetX = worldX;
-      this.player.targetY = worldY;
+  handleMovement(now) {
+    if (now - this.lastMoveTime < this.moveInterval) return;
+
+    let dx = 0, dy = 0;
+
+    // 键盘输入
+    if (this.cursors) {
+      if (this.cursors.left.isDown || (this.wasd && this.wasd.A.isDown)) dx -= 1;
+      if (this.cursors.right.isDown || (this.wasd && this.wasd.D.isDown)) dx += 1;
+      if (this.cursors.up.isDown || (this.wasd && this.wasd.W.isDown)) dy -= 1;
+      if (this.cursors.down.isDown || (this.wasd && this.wasd.S.isDown)) dy += 1;
+    }
+
+    // 摇杆输入
+    if (Math.abs(this.moveDir.x) > 0.1 || Math.abs(this.moveDir.y) > 0.1) {
+      dx = this.moveDir.x;
+      dy = this.moveDir.y;
+    }
+
+    if (dx === 0 && dy === 0) return;
+
+    // 归一化
+    const len = Math.sqrt(dx * dx + dy * dy);
+    if (len > 0) {
+      dx /= len;
+      dy /= len;
+    }
+
+    const speed = TILE_SIZE * 0.6;
+    const newX = Phaser.Math.Clamp(this.player.x + dx * speed, TILE_SIZE, (MAP_WIDTH - 1) * TILE_SIZE);
+    const newY = Phaser.Math.Clamp(this.player.y + dy * speed, TILE_SIZE, (MAP_HEIGHT - 1) * TILE_SIZE);
+
+    this.player.x = newX;
+    this.player.y = newY;
+
+    this.playerSprite.setPosition(newX, newY);
+    this.playerNameText.setPosition(newX, newY - 35);
+
+    this.lastMoveTime = now;
+
+    // 发送移动到服务器
+    if (this.wsConnected && this.ws.readyState === WebSocket.OPEN) {
+      this.ws.send(JSON.stringify({
+        type: 'move',
+        x: newX,
+        y: newY
+      }));
+    }
+  }
+
+  updateMonsters(now) {
+    for (const monster of this.monsters) {
+      if (!monster.alive) continue;
+
+      const distToPlayer = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+
+      // AI状态机
+      if (distToPlayer < monster.attackRange * TILE_SIZE) {
+        // 攻击范围 - 攻击玩家
+        monster.state = 'attacking';
+        if (now - (monster.lastAttack || 0) > 1500) {
+          this.monsterAttackPlayer(monster);
+          monster.lastAttack = now;
+        }
+      } else if (distToPlayer < monster.aggroRange * TILE_SIZE) {
+        // 仇恨范围 - 追击玩家
+        monster.state = 'chasing';
+        const angle = Phaser.Math.Angle.Between(monster.x, monster.y, this.player.x, this.player.y);
+        const speed = TILE_SIZE * 0.3;
+        monster.x += Math.cos(angle) * speed;
+        monster.y += Math.sin(angle) * speed;
+      } else {
+        // 巡逻
+        monster.state = 'idle';
+        if (now - monster.lastMove > 2000) {
+          const angle = Math.random() * Math.PI * 2;
+          const dist = TILE_SIZE * (1 + Math.random() * 2);
+          monster.targetX = Phaser.Math.Clamp(monster.homeX + Math.cos(angle) * dist, TILE_SIZE, (MAP_WIDTH - 1) * TILE_SIZE);
+          monster.targetY = Phaser.Math.Clamp(monster.homeY + Math.sin(angle) * dist, TILE_SIZE, (MAP_HEIGHT - 1) * TILE_SIZE);
+          monster.lastMove = now;
+        }
+        // 移向目标
+        const distToTarget = Phaser.Math.Distance.Between(monster.x, monster.y, monster.targetX, monster.targetY);
+        if (distToTarget > 5) {
+          const angle = Phaser.Math.Angle.Between(monster.x, monster.y, monster.targetX, monster.targetY);
+          const speed = TILE_SIZE * 0.15;
+          monster.x += Math.cos(angle) * speed;
+          monster.y += Math.sin(angle) * speed;
+        }
+      }
+
+      // 更新怪物精灵位置
+      const sprite = this.monsterSprites.get(monster.id);
+      if (sprite) {
+        sprite.graphics.setPosition(monster.x, monster.y);
+        sprite.name.setPosition(monster.x, monster.y - sprite.size - 15);
+        sprite.hpBarBg.setPosition(0, 0);
+        sprite.hpBarBg.clear();
+        sprite.hpBarBg.fillStyle(0x333333, 0.8);
+        sprite.hpBarBg.fillRect(monster.x - 20, monster.y - sprite.size - 8, 40, 4);
+
+        const hpRatio = Math.max(0, monster.hp / monster.maxHp);
+        sprite.hpBar.clear();
+        sprite.hpBar.fillStyle(hpRatio > 0.5 ? 0x00ff00 : hpRatio > 0.25 ? 0xffff00 : 0xff0000, 1);
+        sprite.hpBar.fillRect(monster.x - 20, monster.y - sprite.size - 8, 40 * hpRatio, 4);
+      }
+    }
+  }
+
+  autoAttack(now) {
+    if (this.player.attackCooldown > now) return;
+
+    // 找最近的怪物
+    let nearest = null;
+    let nearestDist = Infinity;
+
+    for (const monster of this.monsters) {
+      if (!monster.alive) continue;
+      const dist = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+      if (dist < nearestDist && dist < TILE_SIZE * 2.5) {
+        nearest = monster;
+        nearestDist = dist;
+      }
+    }
+
+    if (nearest) {
+      this.attackMonster(nearest);
+      this.player.attackCooldown = now + 800;
     }
   }
 
   attackMonster(monster) {
-    const char = window.MIR.character;
-    const dist = Phaser.Math.Distance.Between(this.player.x, this.player.y, monster.x, monster.y);
+    const stats = this.charData.stats || {};
+    const dc = stats.dc || [30, 60];
+    const attackPower = dc[0] + Math.floor(Math.random() * (dc[1] - dc[0]));
+    const monsterDef = monster.data.ac || [0, 0];
+    const defence = monsterDef[0] + Math.floor(Math.random() * (monsterDef[1] - monsterDef[0] + 1));
 
-    if (dist > GAME_CONFIG.TILE_SIZE * 2) {
-      // 距离太远，先移动过去
-      this.player.targetX = monster.x;
-      this.player.targetY = monster.y;
-      this.player.attackTarget = monster;
-      return;
-    }
-
-    // 计算伤害（参考 Crystal 公式）
-    const attackPower = Phaser.Math.Between(char.stats.MinDC, char.stats.MaxDC);
-    const monsterDef = Phaser.Math.Between(
-      monster.data.MinAC || 0, monster.data.MaxAC || 0
-    );
-
-    // 命中判定
-    const hitChance = 70 + (char.stats.Accuracy - monster.data.Agility) * 5;
-    const isHit = Phaser.Math.Between(0, 100) < Math.min(95, Math.max(30, hitChance));
-
-    if (!isHit) {
-      this.showDamageText(monster.x, monster.y - 20, 'MISS', false, '#B0BEC5');
-      return;
-    }
+    let damage = Math.max(1, attackPower - defence);
 
     // 暴击判定
-    const critChance = char.stats.CriticalRate || 5;
-    const isCrit = Phaser.Math.Between(0, 100) < critChance;
-    let damage = Math.max(1, attackPower - monsterDef);
-    if (isCrit) {
-      damage = Math.floor(damage * (1 + (char.stats.CriticalDamage || 50) / 100));
-    }
+    const isCrit = Math.random() < 0.15;
+    if (isCrit) damage = Math.floor(damage * 1.5);
 
-    // 应用伤害
     monster.hp -= damage;
+
+    // 显示伤害
     this.showDamageText(monster.x, monster.y - 20, damage, isCrit);
-    this.drawMonsterHpBar(monster);
+
+    // 攻击特效
+    this.showAttackEffect(this.player.x, this.player.y, monster.x, monster.y);
 
     if (monster.hp <= 0) {
-      this.killMonster(monster);
-    }
+      monster.alive = false;
+      this.onMonsterDied(monster.id);
 
-    // 怪物反击
-    if (monster.alive && dist < GAME_CONFIG.TILE_SIZE * 3) {
-      this.time.delayedCall(500, () => this.monsterAttack(monster));
-    }
-  }
-
-  monsterAttack(monster) {
-    if (!monster.alive) return;
-
-    const char = window.MIR.character;
-    const monsterAtk = Phaser.Math.Between(monster.data.MinDC || 1, monster.data.MaxDC || 5);
-    const playerDef = Phaser.Math.Between(char.stats.MinAC, char.stats.MaxAC);
-    let damage = Math.max(1, monsterAtk - playerDef);
-
-    // 闪避判定
-    const dodgeChance = char.stats.Agility * 3;
-    if (Phaser.Math.Between(0, 100) < dodgeChance) {
-      this.showDamageText(this.player.x, this.player.y - 30, '闪避', false, '#B0BEC5');
-      return;
-    }
-
-    char.stats.HP = Math.max(0, char.stats.HP - damage);
-    this.showDamageText(this.player.x, this.player.y - 30, damage, false, '#FF5252');
-    this.updateUI();
-
-    if (char.stats.HP <= 0) {
-      this.playerDeath();
+      // 发送击杀到服务器
+      if (this.wsConnected && this.ws.readyState === WebSocket.OPEN) {
+        this.ws.send(JSON.stringify({
+          type: 'kill_monster',
+          monsterId: monster.id,
+          monsterDataId: monster.data.id
+        }));
+      }
     }
   }
 
-  killMonster(monster) {
+  monsterAttackPlayer(monster) {
+    const atk = monster.data.dc || [10, 20];
+    const attackPower = atk[0] + Math.floor(Math.random() * (atk[1] - atk[0]));
+    const stats = this.charData.stats || {};
+    const ac = stats.ac || [5, 10];
+    const defence = ac[0] + Math.floor(Math.random() * (ac[1] - ac[0] + 1));
+
+    let damage = Math.max(1, attackPower - defence);
+    this.player.hp = Math.max(0, this.player.hp - damage);
+
+    this.showDamageText(this.player.x, this.player.y - 30, damage, false, true);
+
+    if (this.player.hp <= 0) {
+      this.onPlayerDeath();
+    }
+  }
+
+  onMonsterDied(monsterId) {
+    const monster = this.monsters.find(m => m.id === monsterId);
+    if (!monster) return;
+
     monster.alive = false;
-    monster.graphics.clear();
-    if (monster.nameText) monster.nameText.setVisible(false);
-    if (monster.hpBar) monster.hpBar.clear();
 
-    const char = window.MIR.character;
+    // 隐藏精灵
+    const sprite = this.monsterSprites.get(monsterId);
+    if (sprite) {
+      sprite.graphics.setVisible(false);
+      sprite.name.setVisible(false);
+      sprite.hpBarBg.setVisible(false);
+      sprite.hpBar.setVisible(false);
+    }
 
-    // 经验奖励
-    const expGain = monster.data.Exp || 10;
-    char.experience += expGain;
-    this.showSystemMessage(`击杀 ${monster.data.Name}！获得 ${expGain} 经验`);
+    // 获得经验
+    const expGain = monster.data.exp || 10;
+    this.player.exp += expGain;
+    this.addMessage(`击杀 ${monster.data.name}! +${expGain}经验`);
 
     // 检查升级
     this.checkLevelUp();
 
-    // 掉落金币
-    const goldDrop = Phaser.Math.Between(1, monster.data.Level || 1) * 5;
-    char.gold += goldDrop;
-
-    // 掉落物品（30%概率）
-    if (Phaser.Math.Between(0, 100) < 30) {
-      this.dropItem(monster);
-    }
-
-    this.updateUI();
-
-    // 30秒后重生
-    this.time.delayedCall(30000, () => {
-      monster.hp = monster.maxHp;
-      monster.alive = true;
-      monster.x = monster.spawnX;
-      monster.y = monster.spawnY;
-      this.drawMonster(monster);
-      if (monster.nameText) monster.nameText.setVisible(true);
-      this.drawMonsterHpBar(monster);
-    });
-  }
-
-  dropItem(monster) {
-    const items = window.MIR.gameData?.items || [];
-    if (items.length === 0) return;
-
-    // 随机选择一个物品
-    const item = items[Phaser.Math.Between(0, items.length - 1)];
-    const char = window.MIR.character;
-
-    // 添加到背包
-    if (!char.inventory) char.inventory = [];
-    const existing = char.inventory.find(i => i.itemId === item.ID);
-    if (existing) {
-      existing.count++;
-    } else {
-      char.inventory.push({
-        itemId: item.ID,
-        name: item.Name,
-        count: 1,
-        type: item.ItemType,
-        quality: item.quality || 0,
+    // 掉落物品
+    if (Math.random() < 0.3) {
+      this.showGroundItem(monster.x, monster.y, {
+        name: ['金币', '小红药', '小蓝药', '铁剑', '布衣'][Math.floor(Math.random() * 5)],
+        color: ['#ffd700', '#ff4444', '#4444ff', '#c0c0c0', '#90ee90'][Math.floor(Math.random() * 5)]
       });
     }
 
-    this.showSystemMessage(`获得: ${item.Name}`);
+    // 3秒后复活怪物
+    setTimeout(() => {
+      monster.alive = true;
+      monster.hp = monster.maxHp;
+      monster.x = monster.spawnX;
+      monster.y = monster.spawnY;
+      if (sprite) {
+        sprite.graphics.setVisible(true);
+        sprite.name.setVisible(true);
+        sprite.hpBarBg.setVisible(true);
+        sprite.hpBar.setVisible(true);
+      }
+    }, 5000);
   }
 
   checkLevelUp() {
-    const char = window.MIR.character;
-    const expList = window.MIR.gameData?.expList || [];
-    const maxLevel = expList.length;
+    const maxExp = this.player.maxExp || 100;
+    while (this.player.exp >= maxExp) {
+      this.player.exp -= maxExp;
+      this.player.level++;
+      this.player.maxExp = Math.floor(maxExp * 1.5);
+      this.player.maxHp += 20;
+      this.player.hp = this.player.maxHp;
+      this.player.maxMp += 10;
+      this.player.mp = this.player.maxMp;
 
-    while (char.level < maxLevel && char.experience >= expList[char.level - 1]) {
-      char.level++;
-      char.experience -= expList[char.level - 2] || 0;
-
-      // 升级属性提升
-      const baseStats = window.MIR.gameData?.baseStats?.[char.class] || {};
-      const perLevel = baseStats.perLevel || {};
-      char.stats.MaxHP += (perLevel.MaxHP || 20);
-      char.stats.MaxMP += (perLevel.MaxMP || 10);
-      char.stats.HP = char.stats.MaxHP;
-      char.stats.MP = char.stats.MaxMP;
-      char.stats.MinDC += (perLevel.MinDC || 1);
-      char.stats.MaxDC += (perLevel.MaxDC || 2);
-
-      this.showSystemMessage(`恭喜升到 ${char.level} 级！`);
-      this.updateUI();
+      this.addMessage(`升级! 当前等级: ${this.player.level}`);
+      this.showLevelUpEffect();
     }
   }
 
-  playerDeath() {
-    this.showSystemMessage('你已阵亡！3秒后复活...');
-    this.time.delayedCall(3000, () => {
-      const char = window.MIR.character;
-      char.stats.HP = char.stats.MaxHP;
-      char.stats.MP = char.stats.MaxMP;
-      char.x = 100;
-      char.y = 100;
-      this.player.x = 100 * GAME_CONFIG.TILE_SIZE;
-      this.player.y = 100 * GAME_CONFIG.TILE_SIZE;
-      this.player.targetX = this.player.x;
-      this.player.targetY = this.player.y;
-      this.updateUI();
-      this.showSystemMessage('已复活在安全区');
+  showDamageText(x, y, damage, isCrit, isPlayerDamage) {
+    const color = isPlayerDamage ? '#ff4444' : (isCrit ? '#ffff00' : '#ffffff');
+    const size = isCrit ? '18px' : '14px';
+    const prefix = isCrit ? '暴击! ' : '';
+
+    const text = this.add.text(x + (Math.random() - 0.5) * 20, y, `${prefix}${damage}`, {
+      fontSize: size,
+      color: color,
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 3
     });
+    text.setOrigin(0.5);
+    text.setDepth(50);
+
+    this.damageTexts.push({ text, time: Date.now() });
   }
 
-  showDamageText(x, y, text, isCrit, color) {
-    const dmgColor = color || (isCrit ? GAME_CONFIG.COLORS.CRITICAL : GAME_CONFIG.COLORS.DAMAGE);
-    const fontSize = isCrit ? '20px' : '16px';
+  showAttackEffect(fromX, fromY, toX, toY) {
+    const g = this.add.graphics();
+    g.setDepth(15);
 
-    const dmgText = this.add.text(x, y, String(text), {
-      fontFamily: 'sans-serif',
-      fontSize: fontSize,
-      color: dmgColor,
-      fontStyle: isCrit ? 'bold' : 'normal',
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(0.5).setDepth(50);
+    const charClass = this.charData.class;
+    if (charClass === 'warrior') {
+      // 剑气效果
+      g.lineStyle(3, 0xffffff, 0.8);
+      g.beginPath();
+      g.moveTo(fromX, fromY);
+      g.lineTo(toX, toY);
+      g.strokePath();
+    } else if (charClass === 'wizard') {
+      // 魔法效果
+      g.fillStyle(0x6a5acd, 0.6);
+      g.fillCircle(toX, toY, 20);
+      g.fillStyle(0x9370db, 0.4);
+      g.fillCircle(toX, toY, 30);
+    } else {
+      // 道术效果
+      g.fillStyle(0x90ee90, 0.5);
+      g.fillCircle(toX, toY, 18);
+    }
+
+    this.time.delayedCall(200, () => g.destroy());
+  }
+
+  showLevelUpEffect() {
+    const g = this.add.graphics();
+    g.setDepth(60);
+
+    for (let i = 0; i < 12; i++) {
+      const angle = (i / 12) * Math.PI * 2;
+      const x = this.player.x + Math.cos(angle) * 40;
+      const y = this.player.y + Math.sin(angle) * 40;
+      g.fillStyle(0xffd700, 0.8);
+      g.fillCircle(x, y, 4);
+    }
 
     this.tweens.add({
-      targets: dmgText,
-      y: y - 40,
+      targets: g,
       alpha: 0,
-      duration: 1000,
-      ease: 'Cubic.easeOut',
-      onComplete: () => dmgText.destroy(),
+      scale: 2,
+      duration: 800,
+      onComplete: () => g.destroy()
     });
   }
 
-  showSystemMessage(msg) {
-    this.messageLog.push(msg);
-    if (this.messageLog.length > 5) this.messageLog.shift();
+  showGroundItem(x, y, item) {
+    const g = this.add.graphics();
+    g.fillStyle(Phaser.Display.Color.HexStringToColor(item.color || '#ffd700').color, 0.8);
+    g.fillRoundedRect(x - 8, y - 8, 16, 16, 3);
+    g.setDepth(7);
 
-    this.messageTexts.forEach((t, i) => {
-      t.setText(this.messageLog[i] || '');
+    const text = this.add.text(x, y + 12, item.name, {
+      fontSize: '9px',
+      color: item.color || '#ffd700',
+      stroke: '#000000',
+      strokeThickness: 2
+    });
+    text.setOrigin(0.5);
+    text.setDepth(7);
+
+    // 5秒后消失
+    this.time.delayedCall(5000, () => {
+      g.destroy();
+      text.destroy();
     });
   }
 
   useSkill(index) {
+    if (!this.player || this.player.hp <= 0) return;
+
     if (index === 0) {
       // 普通攻击 - 攻击最近的怪物
-      const nearest = this.monsters
-        .filter(m => m.alive)
-        .sort((a, b) => {
-          const da = Phaser.Math.Distance.Between(this.player.x, this.player.y, a.x, a.y);
-          const db = Phaser.Math.Distance.Between(this.player.x, this.player.y, b.x, b.y);
-          return da - db;
-        })[0];
-
+      let nearest = null;
+      let nearestDist = Infinity;
+      for (const monster of this.monsters) {
+        if (!monster.alive) continue;
+        const dist = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+        if (dist < nearestDist && dist < TILE_SIZE * 3) {
+          nearest = monster;
+          nearestDist = dist;
+        }
+      }
       if (nearest) {
         this.attackMonster(nearest);
+      } else {
+        this.addMessage('附近没有怪物');
+      }
+    } else if (index === 4) {
+      // 使用药品
+      if (this.player.hp < this.player.maxHp) {
+        const heal = Math.floor(this.player.maxHp * 0.3);
+        this.player.hp = Math.min(this.player.maxHp, this.player.hp + heal);
+        this.addMessage(`使用药品，恢复 ${heal} HP`);
+        this.showDamageText(this.player.x, this.player.y - 30, `+${heal}`, false, false);
       }
     } else {
-      this.showSystemMessage('技能尚未学习');
+      // 技能攻击 - 范围伤害
+      const manaCost = 10 + index * 5;
+      if (this.player.mp >= manaCost) {
+        this.player.mp -= manaCost;
+        const damage = (this.charData.stats?.mc || [43, 43])[0] * (index + 1);
+
+        for (const monster of this.monsters) {
+          if (!monster.alive) continue;
+          const dist = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
+          if (dist < TILE_SIZE * 4) {
+            monster.hp -= damage;
+            this.showDamageText(monster.x, monster.y - 20, damage, true);
+            if (monster.hp <= 0) {
+              monster.alive = false;
+              this.onMonsterDied(monster.id);
+            }
+          }
+        }
+
+        // 技能特效
+        const g = this.add.graphics();
+        g.fillStyle([0, 0x6a5acd, 0x90ee90, 0xffd700][index], 0.4);
+        g.fillCircle(this.player.x, this.player.y, TILE_SIZE * 4);
+        g.setDepth(15);
+        this.tweens.add({ targets: g, alpha: 0, scale: 1.5, duration: 500, onComplete: () => g.destroy() });
+
+        this.addMessage(`释放技能${index}! 消耗 ${manaCost} MP`);
+      } else {
+        this.addMessage('MP不足!');
+      }
     }
   }
 
   updateUI() {
-    const char = window.MIR.character;
-    if (!char) return;
+    if (!this.player) return;
 
-    const barW = 200;
+    const hpRatio = Math.max(0, this.player.hp / this.player.maxHp);
+    const mpRatio = Math.max(0, this.player.mp / this.player.maxMp);
+    const expRatio = Math.max(0, this.player.exp / (this.player.maxExp || 100));
 
-    // HP
-    const hpRatio = char.stats.HP / char.stats.MaxHP;
-    this.hpBarFill.width = barW * hpRatio;
-    this.hpText.setText(`${char.stats.HP}/${char.stats.MaxHP}`);
+    this.hpBarFill.clear();
+    this.hpBarFill.fillStyle(0xff3333, 1);
+    this.hpBarFill.fillRoundedRect(45, 35, 150 * hpRatio, 14, 4);
+    this.hpText.setText(`${Math.floor(this.player.hp)}/${this.player.maxHp}`);
 
-    // MP
-    const mpRatio = char.stats.MP / char.stats.MaxMP;
-    this.mpBarFill.width = barW * mpRatio;
-    this.mpText.setText(`${char.stats.MP}/${char.stats.MaxMP}`);
+    this.mpBarFill.clear();
+    this.mpBarFill.fillStyle(0x3333ff, 1);
+    this.mpBarFill.fillRoundedRect(45, 53, 150 * mpRatio, 14, 4);
+    this.mpText.setText(`${Math.floor(this.player.mp)}/${this.player.maxMp}`);
 
-    // EXP
-    const expList = window.MIR.gameData?.expList || [];
-    const currentLevelExp = expList[char.level - 1] || 100;
-    const nextLevelExp = expList[char.level] || 200;
-    const expProgress = (char.experience - currentLevelExp) / (nextLevelExp - currentLevelExp);
-    this.expBarFill.width = barW * Math.max(0, Math.min(1, expProgress));
-
-    // Level
-    this.levelText.setText(`Lv.${char.level}`);
-
-    // Gold
-    this.goldText.setText(`金币: ${char.gold}`);
-
-    // Coords
-    const tileX = Math.floor(this.player.x / GAME_CONFIG.TILE_SIZE);
-    const tileY = Math.floor(this.player.y / GAME_CONFIG.TILE_SIZE);
-    this.coordText.setText(`(${tileX}, ${tileY})`);
+    this.expBarFill.clear();
+    this.expBarFill.fillStyle(0x33ff33, 1);
+    this.expBarFill.fillRoundedRect(45, 71, 150 * expRatio, 14, 4);
+    this.expText.setText(`${this.player.exp}/${this.player.maxExp || 100}`);
   }
 
-  drawMap() {
-    if (!this.mapGraphics) return;
-    this.mapGraphics.clear();
+  updateMiniMap() {
+    if (!this.miniMapDot) return;
+    this.miniMapDot.clear();
 
-    const mapW = this.mapData.width || 100;
-    const mapH = this.mapData.height || 100;
-    const tileSize = GAME_CONFIG.TILE_SIZE;
+    const width = this.scale.width;
+    const mapScaleX = 100 / (MAP_WIDTH * TILE_SIZE);
+    const mapScaleY = 60 / (MAP_HEIGHT * TILE_SIZE);
+    const offsetX = width - 120;
+    const offsetY = 35;
 
-    // 绘制地面（简化版 - 用颜色区分区域）
-    for (let y = 0; y < Math.min(mapH, 100); y++) {
-      for (let x = 0; x < Math.min(mapW, 100); x++) {
-        // 简单的地面颜色
-        const isSafe = (x < 20 && y < 20); // 安全区
-        const color = isSafe ? 0x2E2E1E : 0x1A1A0F;
-        this.mapGraphics.fillStyle(color, 1);
-        this.mapGraphics.fillRect(x * tileSize, y * tileSize, tileSize, tileSize);
+    // 玩家位置
+    this.miniMapDot.fillStyle(0x00ff00, 1);
+    this.miniMapDot.fillCircle(
+      offsetX + this.player.x * mapScaleX,
+      offsetY + this.player.y * mapScaleY,
+      3
+    );
 
-        // 网格线
-        this.mapGraphics.lineStyle(0.5, 0x333333, 0.3);
-        this.mapGraphics.strokeRect(x * tileSize, y * tileSize, tileSize, tileSize);
-      }
-    }
-
-    // 安全区标记
-    this.mapGraphics.lineStyle(2, 0xC9A96E, 0.5);
-    this.mapGraphics.strokeRect(0, 0, 20 * tileSize, 20 * tileSize);
-
-    const safeText = this.add.text(10 * tileSize, 2 * tileSize, '安全区', {
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      color: '#C9A96E',
-      stroke: '#000000',
-      strokeThickness: 3,
-    }).setOrigin(0.5);
-  }
-
-  gameTick() {
-    const now = this.time.now;
-
-    // 处理移动
-    let dx = 0, dy = 0;
-    const speed = 4;
-
-    // 键盘移动
-    if (this.cursors.left.isDown || this.wasd.A.isDown) dx -= speed;
-    if (this.cursors.right.isDown || this.wasd.D.isDown) dx += speed;
-    if (this.cursors.up.isDown || this.wasd.W.isDown) dy -= speed;
-    if (this.cursors.down.isDown || this.wasd.S.isDown) dy += speed;
-
-    // 摇杆移动
-    if (this.joystickActive && (Math.abs(this.moveDir.x) > 0.1 || Math.abs(this.moveDir.y) > 0.1)) {
-      dx += this.moveDir.x * speed;
-      dy += this.moveDir.y * speed;
-    }
-
-    // 点击移动
-    if (dx === 0 && dy === 0) {
-      const distToTarget = Phaser.Math.Distance.Between(
-        this.player.x, this.player.y,
-        this.player.targetX, this.player.targetY
+    // 怪物位置
+    for (const monster of this.monsters) {
+      if (!monster.alive) continue;
+      this.miniMapDot.fillStyle(0xff0000, 0.8);
+      this.miniMapDot.fillCircle(
+        offsetX + monster.x * mapScaleX,
+        offsetY + monster.y * mapScaleY,
+        2
       );
-      if (distToTarget > 5) {
-        const angle = Math.atan2(this.player.targetY - this.player.y, this.player.targetX - this.player.x);
-        dx = Math.cos(angle) * speed;
-        dy = Math.sin(angle) * speed;
-      } else if (this.player.attackTarget) {
-        // 到达目标位置，攻击
-        if (this.player.attackTarget.alive) {
-          this.attackMonster(this.player.attackTarget);
-        }
-        this.player.attackTarget = null;
-      }
     }
+  }
 
-    // 应用移动
-    if (dx !== 0 || dy !== 0) {
-      const newX = this.player.x + dx;
-      const newY = this.player.y + dy;
-
-      // 边界检查
-      const mapW = (this.mapData.width || 100) * GAME_CONFIG.TILE_SIZE;
-      const mapH = (this.mapData.height || 100) * GAME_CONFIG.TILE_SIZE;
-
-      this.player.x = Phaser.Math.Clamp(newX, 0, mapW);
-      this.player.y = Phaser.Math.Clamp(newY, 0, mapH);
-
-      this.player.graphics.setPosition(this.player.x, this.player.y);
-      this.player.nameText.setPosition(this.player.x, this.player.y - 40);
-
-      // 更新角色数据
-      const char = window.MIR.character;
-      char.x = Math.floor(this.player.x / GAME_CONFIG.TILE_SIZE);
-      char.y = Math.floor(this.player.y / GAME_CONFIG.TILE_SIZE);
-    }
-
-    // 怪物AI
-    this.monsters.forEach(monster => {
-      if (!monster.alive) return;
-
-      const distToPlayer = Phaser.Math.Distance.Between(monster.x, monster.y, this.player.x, this.player.y);
-
-      // 仇恨范围
-      if (distToPlayer < monster.aggroRange && monster.state === 'idle') {
-        monster.state = 'chase';
-      }
-
-      if (monster.state === 'chase') {
-        // 追击玩家
-        const angle = Math.atan2(this.player.y - monster.y, this.player.x - monster.x);
-        monster.x += Math.cos(angle) * 2;
-        monster.y += Math.sin(angle) * 2;
-        monster.graphics.setPosition(monster.x, monster.y);
-        if (monster.nameText) monster.nameText.setPosition(monster.x, monster.y - 35);
-
-        // 攻击距离
-        if (distToPlayer < GAME_CONFIG.TILE_SIZE) {
-          monster.state = 'attack';
-          this.monsterAttack(monster);
-        }
-
-        // 脱离仇恨
-        if (distToPlayer > monster.aggroRange * 2) {
-          monster.state = 'return';
-        }
-      } else if (monster.state === 'return') {
-        // 返回出生点
-        const angle = Math.atan2(monster.spawnY - monster.y, monster.spawnX - monster.x);
-        monster.x += Math.cos(angle) * 2;
-        monster.y += Math.sin(angle) * 2;
-        monster.graphics.setPosition(monster.x, monster.y);
-        if (monster.nameText) monster.nameText.setPosition(monster.x, monster.y - 35);
-
-        if (Phaser.Math.Distance.Between(monster.x, monster.y, monster.spawnX, monster.spawnY) < 10) {
-          monster.state = 'idle';
-        }
-      } else if (monster.state === 'idle') {
-        // 随机巡逻
-        monster.moveTimer++;
-        if (monster.moveTimer > 60) {
-          monster.moveTimer = 0;
-          if (Phaser.Math.Between(0, 100) < 30) {
-            const patrolX = monster.spawnX + Phaser.Math.Between(-3, 3) * GAME_CONFIG.TILE_SIZE;
-            const patrolY = monster.spawnY + Phaser.Math.Between(-3, 3) * GAME_CONFIG.TILE_SIZE;
-            monster.targetX = patrolX;
-            monster.targetY = patrolY;
-          }
-        }
-        // 移动到目标
-        if (Math.abs(monster.x - monster.targetX) > 5 || Math.abs(monster.y - monster.targetY) > 5) {
-          const angle = Math.atan2(monster.targetY - monster.y, monster.targetX - monster.x);
-          monster.x += Math.cos(angle) * 1;
-          monster.y += Math.sin(angle) * 1;
-          monster.graphics.setPosition(monster.x, monster.y);
-          if (monster.nameText) monster.nameText.setPosition(monster.x, monster.y - 35);
-        }
-      }
-
-      this.drawMonsterHpBar(monster);
+  showMapName() {
+    const text = this.add.text(this.scale.width / 2, 100, this.mapData.name || '未知地图', {
+      fontSize: '24px',
+      color: '#ffd700',
+      fontStyle: 'bold',
+      stroke: '#000000',
+      strokeThickness: 4
     });
+    text.setOrigin(0.5);
+    text.setScrollFactor(0);
+    text.setDepth(200);
 
-    // 自动攻击（空格键）
-    if (this.attackKey.isDown && now - this.lastMoveTime > 300) {
-      this.lastMoveTime = now;
-      this.useSkill(0);
+    this.tweens.add({
+      targets: text,
+      alpha: 0,
+      y: 80,
+      duration: 2000,
+      delay: 1000,
+      onComplete: () => text.destroy()
+    });
+  }
+
+  addMessage(msg) {
+    this.msgLog.unshift(msg);
+    if (this.msgLog.length > 5) this.msgLog.pop();
+
+    for (let i = 0; i < this.msgTexts.length; i++) {
+      this.msgTexts[i].setText(this.msgLog[i] || '');
     }
+  }
 
-    // 更新UI
-    this.updateUI();
-    this.drawMiniMap();
+  onPlayerDeath() {
+    this.addMessage('你已死亡! 3秒后复活...');
+    this.player.hp = 0;
+
+    this.time.delayedCall(3000, () => {
+      this.player.hp = this.player.maxHp;
+      this.player.mp = this.player.maxMp;
+      this.player.x = (MAP_WIDTH / 2) * TILE_SIZE;
+      this.player.y = (MAP_HEIGHT / 2) * TILE_SIZE;
+      this.playerSprite.setPosition(this.player.x, this.player.y);
+      this.playerNameText.setPosition(this.player.x, this.player.y - 35);
+      this.addMessage('已复活');
+    });
+  }
+
+  update() {
+    // Phaser update loop
   }
 
   shutdown() {
-    if (this.ws) {
-      this.ws.close();
-    }
-    if (this.tickInterval) {
-      this.tickInterval.remove();
-    }
+    if (this.tickInterval) clearInterval(this.tickInterval);
+    if (this.ws) this.ws.close();
   }
 }
