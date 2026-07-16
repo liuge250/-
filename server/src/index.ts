@@ -22,14 +22,17 @@ const mirGamePath = path.resolve(__dirname, '../public/mir-game');
 app.use('/mir-game', express.static(mirGamePath));
 
 // Serve Expo client static assets (production)
-const clientDistPath = path.resolve(__dirname, '../../client/dist');
-if (fs.existsSync(clientDistPath)) {
-  app.use('/_expo', express.static(path.join(clientDistPath, '_expo')));
-  app.use('/assets', express.static(path.join(clientDistPath, 'assets')));
+// 优先使用 server/public/client (已提交到git)，回退到 client/dist (开发环境)
+const clientDistPath = path.resolve(__dirname, '../public/client');
+const clientDevPath = path.resolve(__dirname, '../../client/dist');
+const activeClientPath = fs.existsSync(clientDistPath) ? clientDistPath : clientDevPath;
+if (fs.existsSync(activeClientPath)) {
+  app.use('/_expo', express.static(path.join(activeClientPath, '_expo')));
+  app.use('/assets', express.static(path.join(activeClientPath, 'assets')));
 }
 
 // Game data API endpoints (serve JSON data for the game client)
-const gameDataPath = path.resolve('/workspace/projects/mir-tools/game-data');
+const gameDataPath = path.resolve(__dirname, '../../mir-tools/game-data');
 app.get('/api/v1/game/data/:filename', (req: any, res: any) => {
   const filename = req.params.filename;
   const filePath = path.join(gameDataPath, filename);
@@ -294,13 +297,13 @@ app.get('/', (req: any, res: any) => {
 });
 
 // 其他路由 → Expo client SPA (if exists)
-if (fs.existsSync(clientDistPath)) {
+if (fs.existsSync(activeClientPath)) {
   app.get('*', (req: any, res: any) => {
     // 如果是 /mir-game/ 下的请求，让静态文件中间件处理
     if (req.path.startsWith('/mir-game')) {
       return res.sendFile(path.join(mirGamePath, 'index.html'));
     }
-    res.sendFile(path.join(clientDistPath, 'index.html'));
+    res.sendFile(path.join(activeClientPath, 'index.html'));
   });
 } else {
   // 没有Expo客户端，根路径返回安装页
