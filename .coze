@@ -14,4 +14,4 @@ validate = [ "bash", ".cozeproj/scripts/validate.sh" ]
 [deploy]
 build = [ "bash", ".cozeproj/scripts/prod_build.sh" ]
 run = [ "bash", ".cozeproj/scripts/prod_run.sh" ]
-# build_app_dir = "./client"  # 暂时禁用Android构建，先确保Web版部署成功
+build_app_dir = "./client"
