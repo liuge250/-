@@ -49,9 +49,12 @@ app.get('/api/v1/game/data/:filename', (req: any, res: any) => {
   res.sendFile(filePath);
 });
 
-// Serve game map files
-const mapFilePath = path.resolve('/workspace/projects/MirServer/Mir200/Map');
+// Serve game map files (MirServer地图文件，仅开发环境可用)
+const mapFilePath = path.resolve(__dirname, '../../MirServer/Mir200/Map');
 app.get('/api/v1/game/maps/:filename', (req: any, res: any) => {
+  if (!fs.existsSync(mapFilePath)) {
+    return res.status(404).json({ error: 'Map data not available' });
+  }
   const filename = req.params.filename;
   const filePath = path.join(mapFilePath, filename);
   
