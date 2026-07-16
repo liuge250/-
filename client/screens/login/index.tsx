@@ -198,7 +198,7 @@ export default function LoginScreen() {
         >
           {/* 标题区域 */}
           <View style={styles.header}>
-            <Text style={styles.title}>传奇世界</Text>
+            <Text style={styles.title}>传奇先锋</Text>
             <Text style={styles.subtitle}>AI时代 - 致敬经典</Text>
             <View style={styles.divider} />
           </View>
@@ -283,7 +283,7 @@ export default function LoginScreen() {
                 <ActivityIndicator color={COLORS.bg} />
               ) : (
                 <Text style={styles.submitButtonText}>
-                  {mode === 'login' ? '进入传奇世界' : '创建角色'}
+                  {mode === 'login' ? '进入传奇先锋' : '创建角色'}
                 </Text>
               )}
             </TouchableOpacity>
