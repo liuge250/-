@@ -118,6 +118,6 @@ assets/*.WZX
 assets/*.pak
 assets/*.Pak
 assets/*.PAK
-assets/
+/assets/
 client/assets/mir-sprites/
 mir-tools/output/
