@@ -1,0 +1,47 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+  <title>AI传奇 - 玛法大陆</title>
+  
+  <!-- PWA 配置 -->
+  <link rel="manifest" href="manifest.json">
+  <meta name="theme-color" content="#1a0a0a">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="AI传奇">
+  <meta name="mobile-web-app-capable" content="yes">
+  
+  <!-- 图标 -->
+  <link rel="icon" type="image/png" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="192x192" href="icons/icon-192.png">
+  <link rel="apple-touch-icon" sizes="512x512" href="icons/icon-512.png">
+  
+  <link rel="stylesheet" href="css/style.css">
+  <script src="js/phaser.min.js"></script>
+</head>
+<body>
+  <div id="game-container"></div>
+  <script type="module" src="js/game.js"></script>
+  
+  <!-- 注册 Service Worker -->
+  <script>
+    if ('serviceWorker' in navigator) {
+      window.addEventListener('load', () => {
+        navigator.serviceWorker.register('/mir-game/sw.js')
+          .then(reg => console.log('[PWA] Service Worker 已注册'))
+          .catch(err => console.warn('[PWA] Service Worker 注册失败:', err));
+      });
+    }
+    
+    // PWA 安装提示
+    let deferredPrompt;
+    window.addEventListener('beforeinstallprompt', (e) => {
+      e.preventDefault();
+      deferredPrompt = e;
+      console.log('[PWA] 可以安装到主屏幕');
+    });
+  </script>
+</body>
+</html>

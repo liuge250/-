@@ -1,0 +1,68 @@
+[
+  {
+    "id": "cae70d26-4373-49dc-82f4-b3d48cc4aa96",
+    "username": "testuser",
+    "passwordHash": "82ce13c6fbdb9b77edac0cfe232b3f0b3f4e3d4a8a7badc7f0659e1015b41a40bf8db83dab005e0a9bcde6d585cb5aebdc4de7e6c3a2464aacb24f4eef521cf8",
+    "salt": "af40ee4202fe81e27b46a8037a51cb11",
+    "email": "test@example.com",
+    "createdAt": "2026-07-16T10:43:23.384Z",
+    "lastLoginAt": "2026-07-16T10:43:23.403Z",
+    "characterClass": "",
+    "level": 1
+  },
+  {
+    "id": "2884fc9b-4886-40f9-9eaa-ef84cadbb8cf",
+    "username": "test",
+    "passwordHash": "307774586d8bee4ab82193094a135552ebedb00a1b06bf94c953d2854ea0b45ec6fc59bfbe8d0d28d9f240af1e322f770e85d8f7a5dac6887f6cc23cd1bf62e1",
+    "salt": "60460f30b6027fc8830488f4c197f95a",
+    "email": "309990802@qq.com",
+    "createdAt": "2026-07-16T10:49:24.294Z",
+    "lastLoginAt": "2026-07-16T15:16:04.627Z",
+    "characterClass": "",
+    "level": 1
+  },
+  {
+    "id": "c1f7a2b9-8183-4362-babe-a495a3d5c448",
+    "username": "warrior1",
+    "passwordHash": "1328c3ced10dc79c9bb9c80cb0f3a44e82f76f58e1769508981d9e84732991a39cdb77673a3af2321d7fc86546849b58dfe09e9e5769ea43031629edb134bdc7",
+    "salt": "aa8ba1fa5bab9c66d4abbeb19f2e88ec",
+    "email": "warrior@test.com",
+    "createdAt": "2026-07-16T10:50:26.844Z",
+    "lastLoginAt": "2026-07-16T10:50:26.868Z",
+    "characterClass": "",
+    "level": 1
+  },
+  {
+    "id": "eaadeef3-a7df-4abf-ad84-a2911fc8ca35",
+    "username": "testplayer",
+    "passwordHash": "fc3028660bb7dd5be4f1991260c0ea7cbab9344b694be899f3b8325773b21bfa9892b90bdf2a25c017cb43e5aa562e79e2c710f9d103ac9ad801c6ca7ba6b0e9",
+    "salt": "882ec7ef555409b8b8ac088d1fb42d34",
+    "email": "test@test.com",
+    "createdAt": "2026-07-16T10:52:23.333Z",
+    "lastLoginAt": "2026-07-16T10:58:04.202Z",
+    "characterClass": "",
+    "level": 1
+  },
+  {
+    "id": "13ea761f-20c9-4579-8ef1-3cc306b8efe3",
+    "username": "test123",
+    "passwordHash": "5f7b5f2cfcc31fe2efd25ab07ad1bd116914dcf7b16c7c02132cd5e1c9372d4a7488aec25185ac48c6f8749d81c9b758bf625a9c0ff0f6991e31aa17cb839acf",
+    "salt": "a3a910a58faf5078182f50adad64a4e3",
+    "email": "",
+    "createdAt": "2026-07-16T14:19:22.705Z",
+    "lastLoginAt": "2026-07-16T14:19:22.720Z",
+    "characterClass": "",
+    "level": 1
+  },
+  {
+    "id": "52153ccf-e55b-43b5-a383-04cd72f1db20",
+    "username": "player1",
+    "passwordHash": "14f6669c925af8b5685d8320e5729aec93e335b119e6e1d9812412d948b85985bb8978918bfd1d2fd6dd0488e1b6156d4db86cb30f09eda8b272f150cc0505e2",
+    "salt": "dc1d1429262f309d1fbc55926e689cf2",
+    "email": "",
+    "createdAt": "2026-07-16T15:32:26.439Z",
+    "lastLoginAt": "2026-07-16T15:32:26.439Z",
+    "characterClass": "",
+    "level": 1
+  }
+]

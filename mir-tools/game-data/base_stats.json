@@ -1,0 +1,50 @@
+{
+  "warrior": {
+    "Formula": "Weight",
+    "Base": 15,
+    "Gain": 20,
+    "GainRate": 0,
+    "Max": 0,
+    "Freezing": 6,
+    "PoisonAttack": 6,
+    "MagicResist": 2,
+    "PoisonResist": 6,
+    "HealthRecovery": 8,
+    "SpellRecovery": 8,
+    "PoisonRecovery": 6,
+    "CriticalRate": 18,
+    "CriticalDamage": 10
+  },
+  "wizard": {
+    "Formula": "Weight",
+    "Base": 15,
+    "Gain": 100,
+    "GainRate": 0,
+    "Max": 0,
+    "Freezing": 6,
+    "PoisonAttack": 6,
+    "MagicResist": 2,
+    "PoisonResist": 6,
+    "HealthRecovery": 8,
+    "SpellRecovery": 8,
+    "PoisonRecovery": 6,
+    "CriticalRate": 18,
+    "CriticalDamage": 10
+  },
+  "taoist": {
+    "Formula": "Weight",
+    "Base": 15,
+    "Gain": 50,
+    "GainRate": 0,
+    "Max": 0,
+    "Freezing": 6,
+    "PoisonAttack": 6,
+    "MagicResist": 2,
+    "PoisonResist": 6,
+    "HealthRecovery": 8,
+    "SpellRecovery": 8,
+    "PoisonRecovery": 6,
+    "CriticalRate": 18,
+    "CriticalDamage": 10
+  }
+}
