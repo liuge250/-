@@ -121,3 +121,6 @@ assets/*.PAK
 /assets/
 client/assets/mir-sprites/
 mir-tools/output/
+
+# 游戏资源符号链接（部署环境不可用）
+server/public/mir-game/assets/
