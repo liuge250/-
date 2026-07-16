@@ -1,60 +1,40 @@
-/**
- * AI Legend of MIR - Game Entry Point
- * Phaser.js initialization
- */
-import { BootScene } from './scenes/BootScene.js';
-import { MenuScene } from './scenes/MenuScene.js';
-import { CharacterSelectScene } from './scenes/CharacterSelectScene.js';
-import { GameScene } from './scenes/GameScene.js';
-import { ShopScene } from './scenes/ShopScene.js';
+// 传奇先锋 - 游戏主入口
+(function () {
+  'use strict';
 
-// Responsive game config
-const gameWidth = Math.min(window.innerWidth, 1280);
-const gameHeight = Math.min(window.innerHeight, 720);
-
-const config = {
-  type: Phaser.AUTO,
-  width: gameWidth,
-  height: gameHeight,
-  parent: 'game-container',
-  backgroundColor: '#0a0a1a',
-  scale: {
-    mode: Phaser.Scale.FIT,
-    autoCenter: Phaser.Scale.CENTER_BOTH,
-  },
-  scene: [BootScene, MenuScene, CharacterSelectScene, GameScene, ShopScene],
-  physics: {
-    default: 'arcade',
-    arcade: {
-      gravity: { y: 0 },
-      debug: false,
+  const config = {
+    type: Phaser.AUTO,
+    width: window.innerWidth,
+    height: window.innerHeight,
+    parent: 'game-container',
+    backgroundColor: GAME_CONFIG.COLORS.BACKGROUND,
+    scale: {
+      mode: Phaser.Scale.RESIZE,
+      autoCenter: Phaser.Scale.CENTER_BOTH,
     },
-  },
-  input: {
-    activePointers: 3, // Support multi-touch
-  },
-  render: {
-    pixelArt: true,
-    antialias: false,
-  },
-};
+    scene: [BootScene, MenuScene, CharacterSelectScene, GameScene],
+    physics: {
+      default: 'arcade',
+      arcade: { debug: false },
+    },
+    input: {
+      activePointers: 3, // 支持多点触控
+    },
+  };
 
-// Create game instance
-const game = new Phaser.Game(config);
+  const game = new Phaser.Game(config);
 
-// Handle window resize
-window.addEventListener('resize', () => {
-  const newWidth = Math.min(window.innerWidth, 1280);
-  const newHeight = Math.min(window.innerHeight, 720);
-  game.scale.resize(newWidth, newHeight);
-});
+  // 全局状态
+  window.MIR = {
+    game: game,
+    token: null,
+    username: null,
+    character: null,
+    ws: null,
+  };
 
-// Prevent default touch behaviors
-document.addEventListener('touchmove', (e) => e.preventDefault(), { passive: false });
-document.addEventListener('gesturestart', (e) => e.preventDefault());
-
-// Global game reference
-window.mirGame = game;
-
-console.log('🎮 AI Legend of MIR - Game Engine Initialized');
-console.log(`📐 Resolution: ${gameWidth}x${gameHeight}`);
+  // 窗口大小变化
+  window.addEventListener('resize', () => {
+    game.scale.resize(window.innerWidth, window.innerHeight);
+  });
+})();

@@ -1,131 +1,93 @@
-/**
- * AI Legend of MIR - Game Configuration
- * Balance: Easy early game, high exp, BOSS high drop rate
- */
-export const CONFIG = {
-  // Game world
+// 传奇先锋 - 游戏配置
+const GAME_CONFIG = {
+  // 服务器地址（相对路径，部署时自动适配）
+  API_BASE: '',
+  WS_BASE: '',
+
+  // 游戏画面
+  GAME_WIDTH: 800,
+  GAME_HEIGHT: 600,
   TILE_SIZE: 48,
-  MAP_TILE_SIZE: 48, // Render size per tile
-  VIEWPORT_TILES_X: 20,
-  VIEWPORT_TILES_Y: 15,
 
-  // Player defaults
-  PLAYER: {
-    SPEED: 3,
-    BASE_HP: { warrior: 200, wizard: 120, taoist: 160 },
-    BASE_MP: { warrior: 50, wizard: 200, taoist: 120 },
-    BASE_ATK: { warrior: 25, wizard: 35, taoist: 20 },
-    BASE_DEF: { warrior: 15, wizard: 8, taoist: 12 },
-    ATTACK_RANGE: { warrior: 1.5, wizard: 5, taoist: 3 },
-    ATTACK_SPEED: { warrior: 800, wizard: 1200, taoist: 1000 }, // ms between attacks
-  },
-
-  // Experience - HIGH for easy early game
-  EXP: {
-    MULTIPLIER: 5, // 5x exp rate for fast leveling
-    BASE_TABLE: {}, // Loaded from data
-    // Quick reference: Level 1-10 needs very little exp
-    QUICK_TABLE: {
-      1: 0, 2: 100, 3: 200, 4: 400, 5: 700,
-      6: 1100, 7: 1600, 8: 2200, 9: 3000, 10: 4000,
-      15: 12000, 20: 30000, 25: 60000, 30: 120000,
-      35: 250000, 40: 500000, 45: 1000000, 50: 2000000,
-    },
-  },
-
-  // Monster settings
-  MONSTER: {
-    RESPAWN_TIME: 15000, // 15 seconds base respawn
-    AGGRO_RANGE: 5, // tiles
-    BOSS_AGGRO_RANGE: 8,
-    // Monster level scaling
-    LEVEL_MULTIPLIERS: {
-      1: { hp: 1, atk: 1, def: 1, exp: 1 },
-      5: { hp: 2, atk: 1.5, def: 1.5, exp: 3 },
-      10: { hp: 5, atk: 3, def: 3, exp: 8 },
-      20: { hp: 15, atk: 8, def: 6, exp: 20 },
-      30: { hp: 40, atk: 20, def: 15, exp: 50 },
-    },
-  },
-
-  // BOSS settings - Strong but HIGH drop rate
-  BOSS: {
-    HP_MULTIPLIER: 10, // BOSS has 10x HP
-    ATK_MULTIPLIER: 3, // BOSS has 3x attack
-    DEF_MULTIPLIER: 2, // BOSS has 2x defense
-    DROP_RATE: 0.8, // 80% chance to drop something
-    RARE_DROP_RATE: 0.3, // 30% chance for rare item
-    EPIC_DROP_RATE: 0.1, // 10% chance for epic item
-    LEGENDARY_DROP_RATE: 0.02, // 2% chance for legendary
-    RESPAWN_TIME: 300000, // 5 minutes
-    EXP_MULTIPLIER: 20, // 20x exp for BOSS
-  },
-
-  // Drop rates for normal monsters
-  DROP: {
-    NORMAL_RATE: 0.3, // 30% chance for normal monster drop
-    RARE_RATE: 0.05, // 5% rare
-    GOLD_MULTIPLIER: 3, // 3x gold for easier economy start
-  },
-
-  // Item rarity
-  RARITY: {
-    COMMON: { name: '普通', color: '#FFFFFF', statMult: 1 },
-    UNCOMMON: { name: '优秀', color: '#00FF00', statMult: 1.3 },
-    RARE: { name: '稀有', color: '#0088FF', statMult: 1.8 },
-    EPIC: { name: '史诗', color: '#AA00FF', statMult: 2.5 },
-    LEGENDARY: { name: '传说', color: '#FF8800', statMult: 4 },
-  },
-
-  // Shop - Premium items
-  SHOP: {
-    PREMIUM_ITEMS: [
-      { id: 'exp_boost_50', name: '经验符(50%)', desc: '经验获取+50%，持续1小时', price: 10, currency: 'diamond', duration: 3600000 },
-      { id: 'exp_boost_100', name: '经验符(100%)', desc: '经验获取+100%，持续1小时', price: 20, currency: 'diamond', duration: 3600000 },
-      { id: 'drop_boost_50', name: '爆率符(50%)', desc: '爆率+50%，持续1小时', price: 15, currency: 'diamond', duration: 3600000 },
-      { id: 'hp_potion_large', name: '大太阳水', desc: '瞬间恢复500HP', price: 500, currency: 'gold' },
-      { id: 'mp_potion_large', name: '大魔法药', desc: '瞬间恢复300MP', price: 500, currency: 'gold' },
-      { id: 'teleport_scroll', name: '随机传送卷', desc: '随机传送到当前地图某处', price: 1000, currency: 'gold' },
-      { id: 'town_scroll', name: '回城卷轴', desc: '立即回到安全区', price: 200, currency: 'gold' },
-      { id: 'weapon_enhance', name: '武器强化石', desc: '武器强化成功率+20%', price: 50, currency: 'diamond' },
-      { id: 'pet_exp_book', name: '神兽经验书', desc: '神兽经验+100%', price: 30, currency: 'diamond' },
-      { id: 'vip_card_7d', name: 'VIP卡(7天)', desc: '经验+30% 爆率+20% 专属商店', price: 100, currency: 'diamond', duration: 604800000 },
-    ],
-    // Free diamond rewards
-    DAILY_DIAMONDS: 50, // Login reward
-    FIRST_RECHARGE_BONUS: 2.0, // 2x on first purchase
-  },
-
-  // Team bonuses - encourage grouping
-  TEAM: {
-    MIN_SIZE: 2,
-    EXP_BONUS: { 2: 0.2, 3: 0.4, 4: 0.6, 5: 0.8, 6: 1.0 }, // % bonus per team size
-    DROP_BONUS: { 2: 0.1, 3: 0.2, 4: 0.3, 5: 0.4 }, // % bonus per team size
-    MAX_SIZE: 6,
-  },
-
-  // Starting map
-  START_MAP: '0', // 比奇省
-  START_POSITION: { x: 350, y: 350 },
-  SAFE_ZONE_RADIUS: 20, // tiles around start point
-
-  // Colors for rendering
+  // 颜色主题
   COLORS: {
-    GROUND: '#3D2B1F',
-    WALL: '#1A1A2E',
-    PLAYER_WARRIOR: '#FF4444',
-    PLAYER_WIZARD: '#4444FF',
-    PLAYER_TAOIST: '#44FF44',
-    MONSTER_NORMAL: '#AA6644',
-    MONSTER_ELITE: '#FF8800',
-    MONSTER_BOSS: '#FF0044',
-    ITEM_COMMON: '#FFFFFF',
-    ITEM_RARE: '#0088FF',
-    ITEM_EPIC: '#AA00FF',
-    ITEM_LEGENDARY: '#FF8800',
-    GOLD: '#FFD700',
-    HP_BAR: '#FF3333',
-    MP_BAR: '#3333FF',
-    EXP_BAR: '#FFD700',
+    PRIMARY: '#C9A96E',      // 香槟金
+    SECONDARY: '#002FA7',    // 克莱因蓝
+    BACKGROUND: '#0A0A0F',   // 深黑
+    SURFACE: '#1A1A2E',      // 暗紫
+    TEXT: '#E8E8E8',         // 浅灰白
+    HP: '#E53935',           // 血条红
+    MP: '#1E88E5',           // 蓝条蓝
+    EXP: '#FDD835',          // 经验黄
+    GOLD: '#FFD700',         // 金币金
+    DAMAGE: '#FF5252',       // 伤害红
+    HEAL: '#69F0AE',         // 治疗绿
+    CRITICAL: '#FF6D00',     // 暴击橙
+    MISS: '#B0BEC5',         // 闪避灰
+    CLASS_WARRIOR: '#E53935',// 战士红
+    CLASS_MAGE: '#7B1FA2',   // 法师紫
+    CLASS_TAOIST: '#2E7D32', // 道士绿
   },
+
+  // 职业配置
+  CLASSES: {
+    warrior: { name: '战士', color: '#E53935', desc: '近战物理·高生命高防御' },
+    mage: { name: '法师', color: '#7B1FA2', desc: '远程魔法·群体伤害极高' },
+    taoist: { name: '道士', color: '#2E7D32', desc: '辅助召唤·施毒治疗全能' },
+  },
+
+  // 地图名称映射
+  MAP_NAMES: {
+    '0': '比奇城',
+    '3': '比奇省',
+    '4': '矿山',
+    '10': '毒蛇山谷',
+    '11': '边界村',
+    '20': '盟重省',
+    '21': '苍月岛',
+    '100': '骷髅洞',
+    '101': '洞穴一层',
+    '102': '洞穴二层',
+    '103': '连接通道',
+    '200': '半兽人古墓',
+    '201': '古墓一层',
+    '202': '古墓二层',
+    '203': '古墓三层',
+    '300': '蜈蚣洞',
+    '301': '地牢一层',
+    '302': '地牢二层',
+    '303': '地牢三层',
+    '350': '猪洞',
+    '351': '石墓一层',
+    '352': '石墓二层',
+    '353': '石墓三层',
+    '360': '石墓阵',
+    '400': '祖玛寺庙',
+    '401': '祖玛一层',
+    '402': '祖玛二层',
+    '403': '祖玛三层',
+    '404': '祖玛四层',
+    '405': '祖玛五层',
+    '406': '祖玛六层',
+    '407': '祖玛七层',
+    '450': '沃玛寺庙',
+    '451': '沃玛一层',
+    '452': '沃玛二层',
+    '453': '沃玛三层',
+    '500': '赤月峡谷',
+    '501': '赤月一层',
+    '502': '赤月二层',
+    '503': '赤月三层',
+    '510': '恶魔祭坛',
+    '511': '恶魔右室',
+    '512': '恶魔左室',
+    '513': '赤月老巢',
+    'D717': '未知暗殿',
+    'D617': '封魔谷',
+    'D619': '封魔殿',
+  },
+
+  // 物品品质颜色
+  QUALITY_COLORS: ['#B0BEC5', '#4CAF50', '#2196F3', '#9C27B0', '#FF9800'],
+  QUALITY_NAMES: ['普通', '优秀', '精良', '史诗', '传说'],
 };

@@ -5,6 +5,7 @@ import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import http from "http";
+import { gameServer } from './game/GameServer.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
@@ -272,6 +273,69 @@ app.get('/api/v1/classes', (req, res) => {
   res.json({ classes: Object.values(CLASSES) });
 });
 
+// 创建角色 API (返回完整角色数据供游戏客户端使用)
+app.post('/api/v1/character/create', (req: any, res: any) => {
+  const { playerId, name, class: charClass } = req.body;
+  if (!playerId || !name || !charClass) {
+    return res.status(400).json({ error: 'Missing required fields' });
+  }
+
+  // 根据职业设置初始属性 (参考 Crystal BaseStats)
+  const baseStats: Record<string, any> = {
+    warrior: {
+      MaxHP: 200, MaxMP: 50, HP: 200, MP: 50,
+      MinDC: 5, MaxDC: 8, MinMC: 0, MaxMC: 0, MinSC: 0, MaxSC: 0,
+      MinAC: 3, MaxAC: 5, MinMAC: 1, MaxMAC: 2,
+      Accuracy: 5, Agility: 3, AttackSpeed: 8, MoveSpeed: 10,
+      CriticalRate: 5, CriticalDamage: 50,
+      HealthRecovery: 5, ManaRecovery: 2, PoisonRecovery: 3,
+      MagicResist: 1, PoisonResist: 2, Lucky: 0, Unluck: 0,
+    },
+    wizard: {
+      MaxHP: 85, MaxMP: 200, HP: 85, MP: 200,
+      MinDC: 3, MaxDC: 5, MinMC: 7, MaxMC: 12, MinSC: 0, MaxSC: 0,
+      MinAC: 1, MaxAC: 2, MinMAC: 3, MaxMAC: 6,
+      Accuracy: 4, Agility: 5, AttackSpeed: 6, MoveSpeed: 12,
+      CriticalRate: 8, CriticalDamage: 60,
+      HealthRecovery: 2, ManaRecovery: 8, PoisonRecovery: 2,
+      MagicResist: 3, PoisonResist: 1, Lucky: 0, Unluck: 0,
+    },
+    taoist: {
+      MaxHP: 130, MaxMP: 130, HP: 130, MP: 130,
+      MinDC: 3, MaxDC: 6, MinMC: 3, MaxMC: 5, MinSC: 5, MaxSC: 10,
+      MinAC: 2, MaxAC: 3, MinMAC: 2, MaxMAC: 4,
+      Accuracy: 4, Agility: 4, AttackSpeed: 7, MoveSpeed: 10,
+      CriticalRate: 5, CriticalDamage: 50,
+      HealthRecovery: 4, ManaRecovery: 5, PoisonRecovery: 5,
+      MagicResist: 2, PoisonResist: 4, Lucky: 0, Unluck: 0,
+    },
+  };
+
+  const stats = baseStats[charClass] || baseStats.warrior;
+
+  const character = {
+    playerId,
+    name,
+    class: charClass,
+    level: 1,
+    experience: 0,
+    gold: 100,
+    mapId: '0',
+    x: 100,
+    y: 100,
+    direction: 6, // Down
+    stats,
+    inventory: [
+      // 初始物品：小药水
+      { itemId: 1, name: '小回春丹', count: 10, type: 6, quality: 0, stats: { MaxHP: 50 }, equipped: false },
+      { itemId: 2, name: '小灵气丹', count: 10, type: 6, quality: 0, stats: { MaxMP: 50 }, equipped: false },
+    ],
+    skills: [],
+  };
+
+  res.json({ success: true, character });
+});
+
 // 根路径 → 直接重定向到游戏
 app.get('/', (req: any, res: any) => {
   res.redirect('/mir-game/');
@@ -293,4 +357,7 @@ server.listen(port, () => {
   console.log(`🎮 AI Legend of MIR Server running at http://localhost:${port}/`);
   console.log(`🌐 Game: http://localhost:${port}/mir-game/`);
   console.log(`📊 Health: http://localhost:${port}/api/v1/health`);
+
+  // Initialize WebSocket game server
+  gameServer.init(server);
 });

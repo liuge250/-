@@ -1,170 +1,191 @@
-/**
- * Character Select Scene - Choose class (Warrior/Wizard/Taoist)
- */
-export class CharacterSelectScene extends Phaser.Scene {
+// 传奇先锋 - 角色选择/创建场景
+class CharacterSelectScene extends Phaser.Scene {
   constructor() {
     super({ key: 'CharacterSelectScene' });
+    this.selectedClass = null;
   }
 
   create() {
-    const { width, height } = this.scale;
-    
-    // Background
-    const bg = this.add.graphics();
-    bg.fillGradientStyle(0x0a0a1a, 0x0a0a1a, 0x1a0a2e, 0x1a0a2e, 1);
-    bg.fillRect(0, 0, width, height);
+    const w = this.cameras.main.width;
+    const h = this.cameras.main.height;
+    const C = GAME_CONFIG.COLORS;
 
-    // Title
-    this.add.text(width / 2, 60, '选择你的职业', {
+    // 背景
+    this.add.rectangle(w / 2, h / 2, w, h, 0x0A0A0F);
+
+    // 标题
+    this.add.text(w / 2, 40, '创建角色', {
+      fontFamily: 'serif',
       fontSize: '32px',
-      color: '#FFD700',
-      fontFamily: 'Microsoft YaHei, PingFang SC, sans-serif',
+      color: '#C9A96E',
       fontStyle: 'bold',
     }).setOrigin(0.5);
 
-    this.add.text(width / 2, 95, '每个职业都有独特的AI进化路线', {
-      fontSize: '14px',
-      color: '#888',
-    }).setOrigin(0.5);
-
-    // Class cards
+    // 职业卡片
     const classes = [
-      {
-        key: 'warrior',
-        name: '战 士',
-        color: 0xFF4444,
-        desc: '近战之王，高血量高防御',
-        stats: { hp: '★★★★★', atk: '★★★★☆', def: '★★★★★', speed: '★★★☆☆' },
-        skills: ['烈火剑法', '野蛮冲撞', '逐日剑法'],
-        aiFeature: '战意共鸣：AI分析敌人模式，提示闪避时机',
-      },
-      {
-        key: 'wizard',
-        name: '法 师',
-        color: 0x4444FF,
-        desc: '远程魔法，毁天灭地',
-        stats: { hp: '★★☆☆☆', atk: '★★★★★', def: '★★☆☆☆', speed: '★★★★☆' },
-        skills: ['雷电术', '冰咆哮', '火墙'],
-        aiFeature: '元素洞察：AI识别弱点，推荐最优法术',
-      },
-      {
-        key: 'taoist',
-        name: '道 士',
-        color: 0x44FF44,
-        desc: '辅助治疗，召唤神兽',
-        stats: { hp: '★★★☆☆', atk: '★★★☆☆', def: '★★★★☆', speed: '★★★☆☆' },
-        skills: ['治愈术', '召唤神兽', '施毒术'],
-        aiFeature: '灵契进化：神兽AI自主进化形态',
-      },
+      { id: 'warrior', name: '战士', color: 0xE53935, desc: '近战物理·高生命高防御', stats: 'HP:200 | 攻击:5-8 | 防御:3-5' },
+      { id: 'mage', name: '法师', color: 0x7B1FA2, desc: '远程魔法·群体伤害极高', stats: 'HP:100 | 魔法:5-8 | 防御:1-3' },
+      { id: 'taoist', name: '道士', color: 0x2E7D32, desc: '辅助召唤·施毒治疗全能', stats: 'HP:150 | 道术:5-8 | 防御:2-4' },
     ];
 
-    const cardWidth = Math.min(200, (width - 80) / 3);
-    const cardHeight = 380;
-    const startX = width / 2 - (cardWidth * 3 + 40) / 2;
-    const cardY = 130;
+    this.classCards = [];
+    const cardW = 200;
+    const cardH = 280;
+    const startX = w / 2 - (classes.length * cardW + (classes.length - 1) * 20) / 2;
 
     classes.forEach((cls, i) => {
-      const x = startX + i * (cardWidth + 20) + cardWidth / 2;
-      const y = cardY + cardHeight / 2;
+      const x = startX + i * (cardW + 20) + cardW / 2;
+      const y = h * 0.35;
 
-      // Card background
-      const card = this.add.rectangle(x, y, cardWidth, cardHeight, 0x111122)
-        .setStrokeStyle(2, cls.color)
-        .setInteractive({ useHandCursor: true });
+      // 卡片背景
+      const card = this.add.rectangle(x, y, cardW, cardH, 0x1A1A2E, 0.9);
+      card.setStrokeStyle(2, 0x444444);
+      card.setOrigin(0.5);
 
-      // Class icon (generated texture)
-      this.add.image(x, cardY + 50, `player_${cls.key}`).setScale(2);
+      // 职业图标（用圆形+文字代替）
+      const iconBg = this.add.circle(x, y - 80, 40, cls.color, 0.3);
+      iconBg.setStrokeStyle(3, cls.color);
 
-      // Class name
-      this.add.text(x, cardY + 100, cls.name, {
-        fontSize: '24px',
+      const iconText = this.add.text(x, y - 80, cls.name[0], {
+        fontFamily: 'serif',
+        fontSize: '36px',
         color: Phaser.Display.Color.IntegerToColor(cls.color).rgba,
-        fontFamily: 'Microsoft YaHei, PingFang SC, sans-serif',
         fontStyle: 'bold',
       }).setOrigin(0.5);
 
-      // Description
-      this.add.text(x, cardY + 130, cls.desc, {
+      // 职业名
+      this.add.text(x, y - 20, cls.name, {
+        fontFamily: 'serif',
+        fontSize: '24px',
+        color: Phaser.Display.Color.IntegerToColor(cls.color).rgba,
+        fontStyle: 'bold',
+      }).setOrigin(0.5);
+
+      // 描述
+      this.add.text(x, y + 20, cls.desc, {
+        fontFamily: 'sans-serif',
         fontSize: '12px',
-        color: '#AAA',
-      }).setOrigin(0.5);
-
-      // Stats
-      let statY = cardY + 160;
-      for (const [stat, value] of Object.entries(cls.stats)) {
-        const labels = { hp: '生命', atk: '攻击', def: '防御', speed: '速度' };
-        this.add.text(x - cardWidth / 2 + 15, statY, labels[stat], {
-          fontSize: '11px', color: '#888',
-        });
-        this.add.text(x + cardWidth / 2 - 15, statY, value, {
-          fontSize: '11px', color: '#FFD700',
-        }).setOrigin(1, 0);
-        statY += 20;
-      }
-
-      // Skills
-      this.add.text(x, statY + 10, '初始技能', {
-        fontSize: '11px', color: '#666',
-      }).setOrigin(0.5);
-      cls.skills.forEach((skill, si) => {
-        this.add.text(x, statY + 28 + si * 18, `· ${skill}`, {
-          fontSize: '11px', color: '#CCC',
-        }).setOrigin(0.5);
-      });
-
-      // AI Feature
-      const aiY = cardY + cardHeight - 60;
-      this.add.text(x, aiY, 'AI 觉醒', {
-        fontSize: '10px', color: '#FFD700',
-      }).setOrigin(0.5);
-      this.add.text(x, aiY + 16, cls.aiFeature, {
-        fontSize: '9px', color: '#888',
-        wordWrap: { width: cardWidth - 20 },
+        color: '#AAAAAA',
+        wordWrap: { width: cardW - 20 },
         align: 'center',
       }).setOrigin(0.5);
 
-      // Click handler
-      card.on('pointerover', () => {
-        card.setStrokeStyle(3, 0xFFD700);
-        card.setFillStyle(cls.color, 0.1);
+      // 基础属性
+      this.add.text(x, y + 60, cls.stats, {
+        fontFamily: 'monospace',
+        fontSize: '11px',
+        color: '#888888',
+      }).setOrigin(0.5);
+
+      // 交互区域
+      const hitArea = this.add.rectangle(x, y, cardW, cardH, 0x000000, 0.001);
+      hitArea.setInteractive({ useHandCursor: true });
+      hitArea.on('pointerdown', () => this.selectClass(cls.id));
+      hitArea.on('pointerover', () => card.setStrokeStyle(2, cls.color));
+      hitArea.on('pointerout', () => {
+        if (this.selectedClass !== cls.id) {
+          card.setStrokeStyle(2, 0x444444);
+        }
       });
-      card.on('pointerout', () => {
-        card.setStrokeStyle(2, cls.color);
-        card.setFillStyle(0x111122, 1);
-      });
-      card.on('pointerdown', () => {
-        this.selectedClass = cls.key;
-        this.selectedClassName = cls.name.replace(/\s/g, '');
-        this.selectText.setColor('#00FF00').setText(`已选择: ${this.selectedClassName}`);
-        this.selectText.setAlpha(1);
-        this.confirmBtn.setVisible(true);
-      });
+
+      this.classCards.push({ id: cls.id, card, hitArea, color: cls.color });
     });
 
-    // Selection status
-    this.selectText = this.add.text(width / 2, cardY + cardHeight + 20, '请点击选择职业', {
-      fontSize: '16px', color: '#888',
+    // 角色名输入
+    const inputY = h * 0.7;
+    this.add.text(w / 2, inputY - 30, '角色名称', {
+      fontFamily: 'sans-serif',
+      fontSize: '16px',
+      color: '#C9A96E',
     }).setOrigin(0.5);
 
-    // Confirm button (hidden initially)
-    this.confirmBtn = this.add.rectangle(width / 2, cardY + cardHeight + 70, 180, 44, 0x1a1a00)
-      .setStrokeStyle(2, 0xFFD700)
-      .setInteractive({ useHandCursor: true })
-      .setVisible(false);
+    const nameInputBg = this.add.rectangle(w / 2, inputY + 10, 280, 44, 0x1A1A2E, 0.8);
+    nameInputBg.setStrokeStyle(1, 0xC9A96E, 0.5);
 
-    this.add.text(width / 2, cardY + cardHeight + 70, '进入玛法大陆', {
-      fontSize: '18px', color: '#FFD700',
-      fontFamily: 'Microsoft YaHei, PingFang SC, sans-serif',
-    }).setOrigin(0.5).setVisible(false).setName('confirmLabel');
+    this.nameInput = this.add.dom(w / 2, inputY + 10).createFromHTML(`
+      <input type="text" id="char-name-input" placeholder="请输入角色名"
+        style="width:260px;height:36px;background:transparent;border:none;color:#E8E8E8;font-size:16px;outline:none;text-align:center;"
+        maxlength="12">
+    `);
 
-    this.confirmBtn.on('pointerover', () => this.confirmBtn.setFillStyle(0xFFD700, 0.2));
-    this.confirmBtn.on('pointerout', () => this.confirmBtn.setFillStyle(0x1a1a00, 1));
-    this.confirmBtn.on('pointerdown', () => {
-      if (this.selectedClass) {
-        this.registry.set('playerClass', this.selectedClass);
-        this.registry.set('playerClassName', this.selectedClassName);
-        this.scene.start('GameScene');
-      }
+    // 创建按钮
+    this.createBtn = this.add.text(w / 2, inputY + 80, '进入玛法大陆', {
+      fontFamily: 'sans-serif',
+      fontSize: '18px',
+      color: '#0A0A0F',
+      fontStyle: 'bold',
+      backgroundColor: '#C9A96E',
+      padding: { x: 40, y: 12 },
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    this.createBtn.on('pointerdown', () => this.handleCreate());
+
+    // 提示
+    this.hintText = this.add.text(w / 2, inputY + 130, '', {
+      fontFamily: 'sans-serif',
+      fontSize: '13px',
+      color: '#FF5252',
+    }).setOrigin(0.5);
+
+    // 返回按钮
+    const backBtn = this.add.text(20, 20, '← 返回', {
+      fontFamily: 'sans-serif',
+      fontSize: '16px',
+      color: '#888888',
+    }).setInteractive({ useHandCursor: true });
+    backBtn.on('pointerdown', () => this.scene.start('MenuScene'));
+  }
+
+  selectClass(classId) {
+    this.selectedClass = classId;
+    this.classCards.forEach(({ card, id, color }) => {
+      card.setStrokeStyle(2, id === classId ? color : 0x444444);
     });
+  }
+
+  async handleCreate() {
+    if (!this.selectedClass) {
+      this.hintText.setText('请选择一个职业');
+      return;
+    }
+
+    const nameEl = document.getElementById('char-name-input');
+    const name = nameEl?.value?.trim();
+
+    if (!name || name.length < 2) {
+      this.hintText.setText('角色名至少2个字符');
+      return;
+    }
+
+    this.hintText.setText('创建中...');
+    this.createBtn.disableInteractive();
+
+    try {
+      const response = await fetch(`${GAME_CONFIG.API_BASE}/api/v1/character/create`, {
+        method: 'POST',
+        headers: {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${window.MIR.token}`,
+        },
+        body: JSON.stringify({
+          playerId: window.MIR.username,
+          name: name,
+          class: this.selectedClass,
+        }),
+      });
+
+      const data = await response.json();
+
+      if (data.success && data.character) {
+        window.MIR.character = data.character;
+        this.scene.start('GameScene');
+      } else {
+        this.hintText.setText(data.error || '创建失败');
+        this.createBtn.setInteractive();
+      }
+    } catch (err) {
+      this.hintText.setText('网络错误');
+      this.createBtn.setInteractive();
+    }
   }
 }
