@@ -272,7 +272,7 @@ app.get('/api/v1/classes', (req, res) => {
   res.json({ classes: Object.values(CLASSES) });
 });
 
-// 根路径 → 直接跳转到游戏
+// 根路径 → 直接重定向到游戏
 app.get('/', (req: any, res: any) => {
   res.redirect('/mir-game/');
 });
