@@ -86,29 +86,17 @@ interface UserRecord {
   level: number;
 }
 
-const USERS_FILE = path.join(__dirname, '../data/users.json');
+// 使用内存存储用户数据（部署环境文件系统只读）
+let usersStore: UserRecord[] = [];
 
-// 确保数据目录存在
-const dataDir = path.dirname(USERS_FILE);
-if (!fs.existsSync(dataDir)) {
-  fs.mkdirSync(dataDir, { recursive: true });
-}
-
-// 加载用户数据
+// 加载用户数据（内存）
 function loadUsers(): UserRecord[] {
-  try {
-    if (fs.existsSync(USERS_FILE)) {
-      return JSON.parse(fs.readFileSync(USERS_FILE, 'utf-8'));
-    }
-  } catch {
-    // ignore
-  }
-  return [];
+  return usersStore;
 }
 
-// 保存用户数据
+// 保存用户数据（内存）
 function saveUsers(users: UserRecord[]): void {
-  fs.writeFileSync(USERS_FILE, JSON.stringify(users, null, 2));
+  usersStore = users;
 }
 
 // 密码哈希
