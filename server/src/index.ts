@@ -282,10 +282,17 @@ app.get('/api/v1/classes', (req, res) => {
   res.json({ classes: Object.values(CLASSES) });
 });
 
-// 根路径 → 下载安装页
-app.get('/', (req: any, res: any) => {
-  res.sendFile(path.join(mirGamePath, 'install.html'));
-});
+// 根路径 → Expo client (登录页)
+if (fs.existsSync(activeClientPath)) {
+  app.get('/', (req: any, res: any) => {
+    res.sendFile(path.join(activeClientPath, 'index.html'));
+  });
+} else {
+  // 没有Expo客户端，根路径返回安装页
+  app.get('/', (req: any, res: any) => {
+    res.sendFile(path.join(mirGamePath, 'install.html'));
+  });
+}
 
 // 其他路由 → Expo client SPA (if exists)
 if (fs.existsSync(activeClientPath)) {
