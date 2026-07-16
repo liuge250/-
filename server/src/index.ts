@@ -5,359 +5,1126 @@ import fs from "fs";
 import crypto from "crypto";
 import { fileURLToPath } from "url";
 import http from "http";
-import { gameServer } from './game/GameServer.js';
+import { WebSocketServer, WebSocket } from "ws";
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const app = express();
 const port = process.env.PORT || 9091;
+const server = http.createServer(app);
 
+// ============================================================
 // Middleware
+// ============================================================
 app.use(cors());
 app.use(express.json({ limit: '50mb' }));
 app.use(express.urlencoded({ limit: '50mb', extended: true }));
 
-// Serve AI Legend of MIR game static files
-const mirGamePath = path.resolve(__dirname, '../public/mir-game');
-app.use('/mir-game', express.static(mirGamePath));
+// ============================================================
+// Game Data Loading
+// ============================================================
+const GAME_DATA_DIR = path.join(__dirname, '../../mir-tools/game-data');
+const MAPS_DIR = path.join(__dirname, '../../mir2-database/Jev/Maps');
 
-// Game data API endpoints (serve JSON data for the game client)
-const gameDataPath = path.resolve(__dirname, '../../mir-tools/game-data');
-app.get('/api/v1/game/data/:filename', (req: any, res: any) => {
-  const filename = req.params.filename;
-  const filePath = path.join(gameDataPath, filename);
-  
-  // Security check
-  if (!filePath.startsWith(gameDataPath)) {
-    return res.status(403).json({ error: 'Forbidden' });
+function loadJSON(filename: string): any {
+  const filepath = path.join(GAME_DATA_DIR, filename);
+  if (!fs.existsSync(filepath)) {
+    console.warn(`[GameData] File not found: ${filepath}`);
+    return null;
   }
-  
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Data file not found' });
+  try {
+    return JSON.parse(fs.readFileSync(filepath, 'utf-8'));
+  } catch (e) {
+    console.error(`[GameData] Failed to parse ${filename}:`, e);
+    return null;
   }
-  
-  res.sendFile(filePath);
-});
+}
 
-// Serve game map files (MirServer地图文件，仅开发环境可用)
-const mapFilePath = path.resolve(__dirname, '../../MirServer/Mir200/Map');
-app.get('/api/v1/game/maps/:filename', (req: any, res: any) => {
-  if (!fs.existsSync(mapFilePath)) {
-    return res.status(404).json({ error: 'Map data not available' });
-  }
-  const filename = req.params.filename;
-  const filePath = path.join(mapFilePath, filename);
-  
-  if (!filePath.startsWith(mapFilePath)) {
-    return res.status(403).json({ error: 'Forbidden' });
-  }
-  
-  if (!fs.existsSync(filePath)) {
-    return res.status(404).json({ error: 'Map file not found' });
-  }
-  
-  res.sendFile(filePath);
-});
+// Helper: parse numeric value from string or number
+function num(val: any, fallback = 0): number {
+  if (val === undefined || val === null || val === '') return fallback;
+  const n = Number(val);
+  return isNaN(n) ? fallback : n;
+}
 
-app.get('/api/v1/health', (req, res) => {
-  console.log('Health check success');
-  res.status(200).json({ status: 'ok' });
-});
+// Load raw data
+const monstersRaw = loadJSON('monsters.json') || [];
+const stditemsRaw = loadJSON('stditems.json') || [];
+const magicsRaw = loadJSON('magics.json') || [];
+const expListRaw = loadJSON('exp_list.json') || [];
+const baseStatsRaw = loadJSON('base_stats.json') || {};
+const monsterDropsRaw = loadJSON('monster_drops.json') || {};
+const monsterSpawnsRaw = loadJSON('monster_spawns.json') || [];
+const mapInfoRaw = loadJSON('map_info.json') || {};
+const merchantsRaw = loadJSON('merchants.json') || [];
 
-// ==========================================
-// 用户认证系统
-// ==========================================
-interface UserRecord {
-  id: string;
-  username: string;
-  passwordHash: string;
-  salt: string;
-  email: string;
-  createdAt: string;
-  lastLoginAt: string;
-  characterClass: string;
+// ============================================================
+// Normalize Data
+// ============================================================
+
+// Monsters: array of objects with string fields -> normalize to numbers
+interface MonsterDef {
+  id: number;
+  name: string;
   level: number;
+  hp: number;
+  mp: number;
+  ac: number;
+  mac: number;
+  dc: number;
+  dcMax: number;
+  mc: number;
+  sc: number;
+  exp: number;
 }
 
-// 使用内存存储用户数据（部署环境文件系统只读）
-let usersStore: UserRecord[] = [];
+const monstersData: MonsterDef[] = (Array.isArray(monstersRaw) ? monstersRaw : []).map((m: any) => ({
+  id: num(m.Idx || m.ID || m.Id || m.id),
+  name: String(m.Name || m.name || ''),
+  level: num(m.Lvl || m.Level || 1),
+  hp: num(m.HP || m.MaxHP || 50),
+  mp: num(m.MP || 0),
+  ac: num(m.AC || 0),
+  mac: num(m.MAC || 0),
+  dc: num(m.DC || 5),
+  dcMax: num(m.DCMAX || m.DC || 5),
+  mc: num(m.MC || 0),
+  sc: num(m.SC || 0),
+  exp: num(m.Exp || m.exp || 10),
+}));
 
-// 加载用户数据（内存）
-function loadUsers(): UserRecord[] {
-  return usersStore;
+// Build lookup maps
+const monstersById: Record<number, MonsterDef> = {};
+const monstersByName: Record<string, MonsterDef> = {};
+for (const m of monstersData) {
+  if (m.id) monstersById[m.id] = m;
+  if (m.name) monstersByName[m.name] = m;
 }
 
-// 保存用户数据（内存）
-function saveUsers(users: UserRecord[]): void {
-  usersStore = users;
+// Items: array
+const itemsData = (Array.isArray(stditemsRaw) ? stditemsRaw : []).map((item: any) => ({
+  id: num(item.Id || item.ID || item.Idx || item.id),
+  name: String(item.Name || item.name || ''),
+  type: num(item.StdMode || 0),
+  shape: num(item.Shape || 0),
+  weight: num(item.Weight || 0),
+  duramax: num(item.DuraMax || 0),
+  ac: num(item.Ac || 0),
+  mac: num(item.Mac || 0),
+  dc: num(item.Dc || 0),
+  mc: num(item.Mc || 0),
+  sc: num(item.Sc || 0),
+  price: num(item.Price || item.StdMode || 100),
+}));
+
+// Skills: array
+const skillsData = (Array.isArray(magicsRaw) ? magicsRaw : []).map((s: any) => ({
+  id: num(s.Id || s.ID || s.id),
+  name: String(s.Name || s.name || ''),
+  level: num(s.Level || 1),
+  mpCost: num(s.Need || s.MPCost || 0),
+}));
+
+// Exp list: array or dict
+const expList: number[] = [];
+if (Array.isArray(expListRaw)) {
+  for (const e of expListRaw) expList.push(num(e.Exp || e.exp || 0));
+} else if (typeof expListRaw === 'object') {
+  for (const key of Object.keys(expListRaw).sort((a, b) => num(a) - num(b))) {
+    expList.push(num(expListRaw[key]));
+  }
 }
 
-// 密码哈希
-function hashPassword(password: string, salt: string): string {
-  return crypto.pbkdf2Sync(password, salt, 10000, 64, 'sha512').toString('hex');
-}
-
-// 注册
-app.post('/api/v1/auth/register', (req, res) => {
-  const { username, password, email } = req.body;
-  
-  if (!username || !password) {
-    return res.status(400).json({ error: '用户名和密码不能为空' });
-  }
-  
-  if (username.length < 3 || username.length > 20) {
-    return res.status(400).json({ error: '用户名长度需在3-20个字符之间' });
-  }
-  
-  if (password.length < 6) {
-    return res.status(400).json({ error: '密码长度至少6个字符' });
-  }
-  
-  const users = loadUsers();
-  const existingUser = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-  
-  if (existingUser) {
-    return res.status(409).json({ error: '用户名已存在' });
-  }
-  
-  const salt = crypto.randomBytes(16).toString('hex');
-  const passwordHash = hashPassword(password, salt);
-  
-  const newUser: UserRecord = {
-    id: crypto.randomUUID(),
-    username: username.toLowerCase(),
-    passwordHash,
-    salt,
-    email: email || '',
-    createdAt: new Date().toISOString(),
-    lastLoginAt: new Date().toISOString(),
-    characterClass: '',
-    level: 1,
+// Base stats: dict { warrior: {...}, wizard: {...}, taoist: {...} }
+const baseStats: Record<string, any> = {};
+for (const [cls, stats] of Object.entries(baseStatsRaw as Record<string, any>)) {
+  baseStats[cls] = {
+    hp: num(stats.HP || stats.hp || 100),
+    mp: num(stats.MP || stats.mp || 20),
+    hpGain: num(stats.LvGainHP || stats.hpGain || 4),
+    mpGain: num(stats.LvGainMP || stats.mpGain || 3),
+    baseAttack: num(stats.BaseAttack || stats.baseAttack || stats.Base || 15),
+    baseDefence: num(stats.BaseDefence || stats.baseDefence || 10),
   };
+}
+
+// Map info: { maps: [...] } or dict
+const mapInfoList: any[] = [];
+if (mapInfoRaw.maps && Array.isArray(mapInfoRaw.maps)) {
+  for (const m of mapInfoRaw.maps) {
+    mapInfoList.push({
+      id: String(m.file || m.id || m.mapId || ''),
+      title: String(m.name || m.title || ''),
+      flags: m.flags || [],
+    });
+  }
+} else if (Array.isArray(mapInfoRaw)) {
+  for (const m of mapInfoRaw) {
+    mapInfoList.push({
+      id: String(m.file || m.id || m.mapId || ''),
+      title: String(m.name || m.title || ''),
+      flags: m.flags || [],
+    });
+  }
+}
+
+const mapsById: Record<string, any> = {};
+for (const m of mapInfoList) {
+  if (m.id) mapsById[m.id] = m;
+}
+
+// Monster spawns: array
+const monsterSpawns = (Array.isArray(monsterSpawnsRaw) ? monsterSpawnsRaw : []).map((s: any) => ({
+  map: String(s.map || s.mapId || ''),
+  x: num(s.x),
+  y: num(s.y),
+  monster: String(s.monster || s.name || ''),
+  range: num(s.range || 5),
+  count: num(s.count || 1),
+  respawnTime: num(s.respawn_time || s.respawnTime || 60),
+}));
+
+// Monster drops: dict { monsterName: [{item, amount, chance}] }
+const monsterDrops: Record<string, any[]> = {};
+if (typeof monsterDropsRaw === 'object' && !Array.isArray(monsterDropsRaw)) {
+  for (const [name, drops] of Object.entries(monsterDropsRaw)) {
+    monsterDrops[name] = Array.isArray(drops) ? drops : [];
+  }
+}
+
+console.log(`[GameData] Monsters: ${monstersData.length}, Items: ${itemsData.length}, Skills: ${skillsData.length}`);
+console.log(`[GameData] Maps: ${mapInfoList.length}, Spawns: ${monsterSpawns.length}, Drop tables: ${Object.keys(monsterDrops).length}`);
+
+// ============================================================
+// Map Data - Generate simple walkable maps
+// ============================================================
+interface ParsedMap {
+  id: string;
+  width: number;
+  height: number;
+  tiles: number[]; // 0=walkable, 1=wall
+}
+
+const parsedMaps: Record<string, ParsedMap> = {};
+
+function generateSimpleMap(mapId: string, width: number, height: number): ParsedMap {
+  const tiles: number[] = new Array(width * height).fill(0);
+  // Add border walls
+  for (let x = 0; x < width; x++) {
+    tiles[x] = 1; // top
+    tiles[(height - 1) * width + x] = 1; // bottom
+  }
+  for (let y = 0; y < height; y++) {
+    tiles[y * width] = 1; // left
+    tiles[y * width + width - 1] = 1; // right
+  }
+  return { id: mapId, width, height, tiles };
+}
+
+// Generate maps for all known map IDs
+function loadAllMaps() {
+  // Generate maps for all map info entries
+  for (const info of mapInfoList) {
+    const mapId = info.id;
+    if (parsedMaps[mapId]) continue;
+    // Determine size based on map type
+    let w = 100, h = 80;
+    if (mapId.includes('Mine') || mapId.includes('D716')) { w = 80; h = 60; }
+    if (mapId === '0' || mapId === '3') { w = 150; h = 120; }
+    parsedMaps[mapId] = generateSimpleMap(mapId, w, h);
+  }
   
-  users.push(newUser);
-  saveUsers(users);
+  // Ensure default maps exist
+  if (!parsedMaps['3']) parsedMaps['3'] = generateSimpleMap('3', 150, 120);
+  if (!parsedMaps['0']) parsedMaps['0'] = generateSimpleMap('0', 120, 100);
   
-  // 返回token（简化版，直接用userId）
-  const token = Buffer.from(`${newUser.id}:${newUser.username}`).toString('base64');
-  
-  res.status(201).json({
-    success: true,
-    message: '注册成功',
-    token,
-    user: {
-      id: newUser.id,
-      username: newUser.username,
-      email: newUser.email,
-      level: newUser.level,
-      createdAt: newUser.createdAt,
-    },
-  });
+  console.log(`[GameData] Generated ${Object.keys(parsedMaps).length} maps`);
+}
+
+loadAllMaps();
+
+// ============================================================
+// In-Memory Storage
+// ============================================================
+const usersStore = new Map<string, { username: string; password: string; token: string }>();
+const charactersStore = new Map<string, any>(); // key: charId, value: character data
+const playerByToken = new Map<string, string>(); // token -> username
+const playerCharacters = new Map<string, string[]>(); // username -> charId[]
+const playerSessions = new Map<string, any>(); // key: token, value: game session
+
+// ============================================================
+// Class Base Stats
+// ============================================================
+const CLASS_BASE_STATS: Record<string, any> = {
+  warrior: {
+    hp: 110, mp: 12, hpGain: 4, mpGain: 3,
+    baseAttack: 15, baseDefence: 10,
+  },
+  wizard: {
+    hp: 70, mp: 40, hpGain: 2, mpGain: 5,
+    baseAttack: 8, baseDefence: 5,
+  },
+  taoist: {
+    hp: 90, mp: 25, hpGain: 3, mpGain: 4,
+    baseAttack: 10, baseDefence: 8,
+  },
+};
+
+// Override with loaded data if available
+for (const cls of ['warrior', 'wizard', 'taoist']) {
+  if (baseStats[cls]) {
+    CLASS_BASE_STATS[cls] = { ...CLASS_BASE_STATS[cls], ...baseStats[cls] };
+  }
+}
+
+// ============================================================
+// Combat Formulas (from Crystal source)
+// ============================================================
+function calcDamage(attacker: any, defender: any): number {
+  const attackMin = num(attacker.DC || attacker.atk || 5);
+  const attackMax = num(attacker.DCMax || attacker.atkMax || attackMin * 2);
+  const defenceMin = num(defender.AC || defender.def || 0);
+  const defenceMax = num(defender.ACMax || (defender.AC || 0) + (defender.MaxAC || 0));
+
+  const attackPower = attackMin + Math.floor(Math.random() * Math.max(1, attackMax - attackMin + 1));
+  const armour = defenceMin + Math.floor(Math.random() * Math.max(1, defenceMax - defenceMin + 1));
+
+  // Accuracy vs Agility
+  const accuracy = num(attacker.Accuracy || 1) + Math.random() * 2;
+  const agility = num(defender.Agility || 1) + Math.random() * 2;
+  if (accuracy < agility && Math.random() < 0.3) return 0; // Miss
+
+  let damage = Math.max(0, attackPower - armour);
+
+  // Critical hit (10% chance)
+  if (Math.random() < 0.1) {
+    damage = Math.floor(damage * 1.5);
+  }
+
+  // Level difference
+  const levelOffset = num(attacker.Level || 1) - num(defender.Level || 1);
+  if (levelOffset < 0) damage = Math.floor(damage * (1 - Math.min(0.7, Math.abs(levelOffset) * 0.1)));
+  else if (levelOffset > 0) damage = Math.floor(damage * (1 + Math.min(0.3, levelOffset * 0.05)));
+
+  return Math.max(0, damage);
+}
+
+function calcExpForLevel(level: number): number {
+  if (level < 1) return 0;
+  if (expList.length > 0 && level <= expList.length) {
+    return expList[level - 1] || level * level * 100;
+  }
+  return level * level * 100;
+}
+
+// ============================================================
+// Auth API
+// ============================================================
+app.post('/api/v1/auth/register', (req, res) => {
+  const { username, password } = req.body;
+  if (!username || !password) return res.status(400).json({ error: '用户名和密码不能为空' });
+  if (username.length < 2 || username.length > 20) return res.status(400).json({ error: '用户名长度2-20' });
+  if (password.length < 3) return res.status(400).json({ error: '密码至少3位' });
+  if (usersStore.has(username)) return res.status(400).json({ error: '用户名已存在' });
+
+  const token = crypto.randomBytes(32).toString('hex');
+  usersStore.set(username, { username, password, token });
+  playerByToken.set(token, username);
+  playerCharacters.set(username, []);
+  res.json({ success: true, token, username });
 });
 
-// 登录
 app.post('/api/v1/auth/login', (req, res) => {
   const { username, password } = req.body;
-  
-  if (!username || !password) {
-    return res.status(400).json({ error: '用户名和密码不能为空' });
-  }
-  
-  const users = loadUsers();
-  const user = users.find(u => u.username.toLowerCase() === username.toLowerCase());
-  
-  if (!user) {
-    return res.status(401).json({ error: '用户名或密码错误' });
-  }
-  
-  const passwordHash = hashPassword(password, user.salt);
-  
-  if (passwordHash !== user.passwordHash) {
-    return res.status(401).json({ error: '用户名或密码错误' });
-  }
-  
-  // 更新最后登录时间
-  user.lastLoginAt = new Date().toISOString();
-  saveUsers(users);
-  
-  const token = Buffer.from(`${user.id}:${user.username}`).toString('base64');
-  
-  res.json({
-    success: true,
-    message: '登录成功',
-    token,
-    user: {
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      level: user.level,
-      characterClass: user.characterClass,
-    },
-  });
+  if (!username || !password) return res.status(400).json({ error: '请输入用户名和密码' });
+  const user = usersStore.get(username);
+  if (!user || user.password !== password) return res.status(401).json({ error: '用户名或密码错误' });
+  res.json({ success: true, token: user.token, username });
 });
 
-// 获取用户信息（通过token）
-app.get('/api/v1/auth/me', (req, res) => {
-  const authHeader = req.headers.authorization;
-  
-  if (!authHeader || !authHeader.startsWith('Bearer ')) {
-    return res.status(401).json({ error: '未授权' });
+// ============================================================
+// Character API
+// ============================================================
+
+// Get characters for a player
+app.get('/api/v1/characters', (req, res) => {
+  const { playerId } = req.query;
+  if (!playerId) return res.status(400).json({ error: '缺少playerId' });
+
+  const username = String(playerId);
+  const charIds = playerCharacters.get(username) || [];
+  const characters = charIds
+    .map(id => charactersStore.get(id))
+    .filter(Boolean);
+
+  res.json({ characters });
+});
+
+// Create character
+app.post('/api/v1/character/create', (req, res) => {
+  const { playerId, name, class: playerClass } = req.body;
+  if (!playerId || !name || !playerClass) return res.status(400).json({ error: '缺少参数' });
+  if (!['warrior', 'wizard', 'taoist'].includes(playerClass)) {
+    return res.status(400).json({ error: '无效职业' });
   }
-  
-  const token = authHeader.substring(7);
-  
-  try {
-    const decoded = Buffer.from(token, 'base64').toString('utf-8');
-    const [userId] = decoded.split(':');
-    
-    const users = loadUsers();
-    const user = users.find(u => u.id === userId);
-    
-    if (!user) {
-      return res.status(404).json({ error: '用户不存在' });
+
+  const username = String(playerId);
+  const charIds = playerCharacters.get(username) || [];
+  if (charIds.length >= 3) return res.status(400).json({ error: '最多创建3个角色' });
+
+  const base = CLASS_BASE_STATS[playerClass] || CLASS_BASE_STATS.warrior;
+  const charId = crypto.randomBytes(8).toString('hex');
+
+  // Find spawn position from map info
+  let spawnX = 50, spawnY = 50;
+  let spawnMapId = '0';
+
+  // Try to find a good spawn point
+  const spawnForMap = monsterSpawns.find(s => s.map === '0' || s.map === '3');
+  if (spawnForMap) {
+    spawnX = spawnForMap.x;
+    spawnY = spawnForMap.y;
+    spawnMapId = spawnForMap.map;
+  }
+
+  // Use center of parsed map if available
+  const parsedMap = parsedMaps[spawnMapId] || parsedMaps['0'] || parsedMaps['3'];
+  if (parsedMap) {
+    spawnX = Math.floor(parsedMap.width / 2);
+    spawnY = Math.floor(parsedMap.height / 2);
+    // Find walkable tile near center
+    for (let r = 0; r < 20; r++) {
+      let found = false;
+      for (let dx = -r; dx <= r && !found; dx++) {
+        for (let dy = -r; dy <= r && !found; dy++) {
+          const tx = spawnX + dx;
+          const ty = spawnY + dy;
+          if (tx >= 0 && tx < parsedMap.width && ty >= 0 && ty < parsedMap.height) {
+            if (parsedMap.tiles[ty * parsedMap.width + tx] === 0) {
+              spawnX = tx;
+              spawnY = ty;
+              found = true;
+            }
+          }
+        }
+      }
+      if (found) break;
     }
-    
-    res.json({
-      id: user.id,
-      username: user.username,
-      email: user.email,
-      level: user.level,
-      characterClass: user.characterClass,
-      createdAt: user.createdAt,
-      lastLoginAt: user.lastLoginAt,
-    });
-  } catch {
-    return res.status(401).json({ error: '无效的token' });
   }
-});
-
-// VIP 商城 API
-const VIP_ITEMS = {
-  treasure_3d: { id: 'treasure_3d', name: '打宝符(3天)', description: '3天内打怪经验+50%，掉落率+30%，金币+50%', price: 30, effects: { expMultiplier: 1.5, dropMultiplier: 1.3, goldMultiplier: 1.5 } },
-  treasure_7d: { id: 'treasure_7d', name: '打宝符(7天)', description: '7天内打怪经验+80%，掉落率+50%，金币+80%。新手推荐！', price: 68, effects: { expMultiplier: 1.8, dropMultiplier: 1.5, goldMultiplier: 1.8 } },
-  treasure_30d: { id: 'treasure_30d', name: '打宝符(30天)', description: '30天内打怪经验+100%，掉落率+80%，金币+100%。超值之选！', price: 198, effects: { expMultiplier: 2.0, dropMultiplier: 1.8, goldMultiplier: 2.0 } },
-  exp_boost: { id: 'exp_boost', name: '经验丹', description: '使用后1小时内经验获取翻倍', price: 10, effects: { expMultiplier: 2.0, dropMultiplier: 1.0, goldMultiplier: 1.0 } },
-  drop_boost: { id: 'drop_boost', name: '掉落符', description: '使用后1小时内掉落率提升100%', price: 10, effects: { expMultiplier: 1.0, dropMultiplier: 2.0, goldMultiplier: 1.0 } },
-};
-
-// 获取商城道具列表
-app.get('/api/v1/shop', (req, res) => {
-  res.json({ items: Object.values(VIP_ITEMS) });
-});
-
-// 购买道具（模拟支付）
-app.post('/api/v1/shop/purchase', (req, res) => {
-  const { itemId, playerId } = req.body;
-  const item = VIP_ITEMS[itemId as keyof typeof VIP_ITEMS];
-  if (!item) {
-    return res.status(400).json({ error: '道具不存在' });
-  }
-  // 模拟支付成功
-  res.json({ success: true, message: `购买${item.name}成功`, item, playerId });
-});
-
-// 获取玩家 VIP 状态
-app.get('/api/v1/vip/status/:playerId', (req, res) => {
-  res.json({ playerId: req.params.playerId, activeItems: [], bonus: { expMultiplier: 1.0, dropMultiplier: 1.0, goldMultiplier: 1.0 } });
-});
-
-// 职业信息
-const CLASSES = {
-  warrior: { id: 'warrior', name: '战士', description: '近战物理攻击，高生命高防御。擅长正面硬刚，是团队的前排坦克。', baseStats: { hp: 200, mp: 50, attack: 15, defense: 12, speed: 8 } },
-  mage: { id: 'mage', name: '法师', description: '远程魔法攻击，群体伤害极高。擅长范围清怪，但生命较低。', baseStats: { hp: 100, mp: 200, attack: 25, defense: 5, speed: 10 } },
-  taoist: { id: 'taoist', name: '道士', description: '辅助型职业，可召唤神兽、施毒、治疗。全能型，适合单人打宝。', baseStats: { hp: 150, mp: 120, attack: 12, defense: 8, speed: 12 } },
-};
-
-app.get('/api/v1/classes', (req, res) => {
-  res.json({ classes: Object.values(CLASSES) });
-});
-
-// 创建角色 API (返回完整角色数据供游戏客户端使用)
-app.post('/api/v1/character/create', (req: any, res: any) => {
-  const { playerId, name, class: charClass } = req.body;
-  if (!playerId || !name || !charClass) {
-    return res.status(400).json({ error: 'Missing required fields' });
-  }
-
-  // 根据职业设置初始属性 (参考 Crystal BaseStats)
-  const baseStats: Record<string, any> = {
-    warrior: {
-      MaxHP: 200, MaxMP: 50, HP: 200, MP: 50,
-      MinDC: 5, MaxDC: 8, MinMC: 0, MaxMC: 0, MinSC: 0, MaxSC: 0,
-      MinAC: 3, MaxAC: 5, MinMAC: 1, MaxMAC: 2,
-      Accuracy: 5, Agility: 3, AttackSpeed: 8, MoveSpeed: 10,
-      CriticalRate: 5, CriticalDamage: 50,
-      HealthRecovery: 5, ManaRecovery: 2, PoisonRecovery: 3,
-      MagicResist: 1, PoisonResist: 2, Lucky: 0, Unluck: 0,
-    },
-    wizard: {
-      MaxHP: 85, MaxMP: 200, HP: 85, MP: 200,
-      MinDC: 3, MaxDC: 5, MinMC: 7, MaxMC: 12, MinSC: 0, MaxSC: 0,
-      MinAC: 1, MaxAC: 2, MinMAC: 3, MaxMAC: 6,
-      Accuracy: 4, Agility: 5, AttackSpeed: 6, MoveSpeed: 12,
-      CriticalRate: 8, CriticalDamage: 60,
-      HealthRecovery: 2, ManaRecovery: 8, PoisonRecovery: 2,
-      MagicResist: 3, PoisonResist: 1, Lucky: 0, Unluck: 0,
-    },
-    taoist: {
-      MaxHP: 130, MaxMP: 130, HP: 130, MP: 130,
-      MinDC: 3, MaxDC: 6, MinMC: 3, MaxMC: 5, MinSC: 5, MaxSC: 10,
-      MinAC: 2, MaxAC: 3, MinMAC: 2, MaxMAC: 4,
-      Accuracy: 4, Agility: 4, AttackSpeed: 7, MoveSpeed: 10,
-      CriticalRate: 5, CriticalDamage: 50,
-      HealthRecovery: 4, ManaRecovery: 5, PoisonRecovery: 5,
-      MagicResist: 2, PoisonResist: 4, Lucky: 0, Unluck: 0,
-    },
-  };
-
-  const stats = baseStats[charClass] || baseStats.warrior;
 
   const character = {
-    playerId,
+    id: charId,
+    playerId: username,
     name,
-    class: charClass,
+    class: playerClass,
     level: 1,
-    experience: 0,
+    exp: 0,
+    hp: base.hp,
+    maxHp: base.hp,
+    mp: base.mp,
+    maxMp: base.mp,
+    DC: base.baseAttack,
+    DCMax: Math.floor(base.baseAttack * 1.5),
+    MC: Math.floor(base.baseAttack * 0.7),
+    SC: Math.floor(base.baseAttack * 0.5),
+    AC: base.baseDefence,
+    ACMax: Math.floor(base.baseDefence * 0.5),
+    MAC: Math.floor(base.baseDefence * 0.8),
+    MACMax: Math.floor(base.baseDefence * 0.3),
+    Accuracy: 1,
+    Agility: 1,
+    x: spawnX,
+    y: spawnY,
+    mapId: spawnMapId,
+    inventory: [],
+    equipment: {},
     gold: 100,
-    mapId: '0',
-    x: 100,
-    y: 100,
-    direction: 6, // Down
-    stats,
-    inventory: [
-      // 初始物品：小药水
-      { itemId: 1, name: '小回春丹', count: 10, type: 6, quality: 0, stats: { MaxHP: 50 }, equipped: false },
-      { itemId: 2, name: '小灵气丹', count: 10, type: 6, quality: 0, stats: { MaxMP: 50 }, equipped: false },
-    ],
-    skills: [],
+    createdAt: Date.now(),
   };
+
+  charactersStore.set(charId, character);
+  charIds.push(charId);
+  playerCharacters.set(username, charIds);
 
   res.json({ success: true, character });
 });
 
-// 根路径 → 直接重定向到游戏
-app.get('/', (req: any, res: any) => {
-  res.redirect('/mir-game/');
+// Get single character
+app.get('/api/v1/character/:charId', (req, res) => {
+  const char = charactersStore.get(req.params.charId);
+  if (!char) return res.status(404).json({ error: '角色不存在' });
+  res.json(char);
 });
 
-// 其他路由 → 游戏页面
-app.get('*', (req: any, res: any) => {
-  if (req.path.startsWith('/mir-game')) {
-    return res.sendFile(path.join(mirGamePath, 'index.html'));
+// ============================================================
+// Game Data API
+// ============================================================
+
+// Get maps list
+app.get('/api/v1/maps', (_req, res) => {
+  const maps = Object.entries(parsedMaps).map(([id, m]) => ({
+    id,
+    width: m.width,
+    height: m.height,
+    title: mapsById[id]?.title || mapsById[id]?.name || `地图${id}`,
+  }));
+  // Sort: put common maps first
+  const priority = ['0', '3', '4', '10', '11', '20', '100', '101'];
+  maps.sort((a, b) => {
+    const ai = priority.indexOf(a.id);
+    const bi = priority.indexOf(b.id);
+    if (ai >= 0 && bi >= 0) return ai - bi;
+    if (ai >= 0) return -1;
+    if (bi >= 0) return 1;
+    return a.id.localeCompare(b.id);
+  });
+  res.json(maps.slice(0, 50));
+});
+
+// Get single map info
+app.get('/api/v1/maps/:id', (req, res) => {
+  const map = parsedMaps[req.params.id];
+  if (!map) return res.status(404).json({ error: '地图数据不存在' });
+  res.json({
+    id: req.params.id,
+    width: map.width,
+    height: map.height,
+    title: mapsById[req.params.id]?.title || mapsById[req.params.id]?.name || `地图${req.params.id}`,
+  });
+});
+
+// Get monsters for a specific map
+app.get('/api/v1/maps/:id/monsters', (req, res) => {
+  const mapId = req.params.id;
+  const spawns = monsterSpawns.filter(s => s.map === mapId);
+  res.json(spawns.slice(0, 50));
+});
+
+// Get map terrain data
+app.get('/api/v1/maps/:id/terrain', (req, res) => {
+  const map = parsedMaps[req.params.id];
+  if (!map) return res.status(404).json({ error: '地图数据不存在' });
+  res.json({
+    id: map.id,
+    width: map.width,
+    height: map.height,
+    tiles: map.tiles,
+  });
+});
+
+// Health check
+app.get('/api/v1/health', (_req, res) => {
+  res.json({
+    status: 'ok',
+    maps: Object.keys(parsedMaps).length,
+    monsters: monstersData.length,
+    items: itemsData.length,
+    skills: skillsData.length,
+    players: playerSessions.size,
+  });
+});
+
+// Game data info
+app.get('/api/v1/game/info', (_req, res) => {
+  res.json({
+    monsters: monstersData.length,
+    items: itemsData.length,
+    skills: skillsData.length,
+    maps: Object.keys(parsedMaps).length,
+    spawns: monsterSpawns.length,
+  });
+});
+
+// ============================================================
+// Static Files
+// ============================================================
+const mirGamePath = path.join(__dirname, '../public/mir-game');
+app.use('/mir-game', express.static(mirGamePath));
+app.get('/', (_req, res) => res.redirect('/mir-game/'));
+
+// ============================================================
+// WebSocket Game Server
+// ============================================================
+const wss = new WebSocketServer({ server, path: '/ws' });
+
+interface GameSession {
+  ws: WebSocket;
+  token: string;
+  username: string;
+  charId: string;
+  character: any;
+  mapId: string;
+  x: number;
+  y: number;
+  hp: number;
+  maxHp: number;
+  mp: number;
+  maxMp: number;
+  level: number;
+  exp: number;
+  lastAttack: number;
+  targetId: string | null;
+}
+
+interface MonsterInstance {
+  id: string;
+  monsterDef: MonsterDef;
+  mapId: string;
+  x: number;
+  y: number;
+  homeX: number;
+  homeY: number;
+  hp: number;
+  maxHp: number;
+  state: 'idle' | 'patrol' | 'chase' | 'attack' | 'dead';
+  lastMove: number;
+  lastAttack: number;
+  deathTime: number;
+}
+
+// Active monsters per map
+const mapMonsters: Record<string, MonsterInstance[]> = {};
+
+function getMapMonsterList(mapId: string): MonsterInstance[] {
+  if (!mapMonsters[mapId]) {
+    spawnMonstersForMap(mapId);
   }
-  // 其他未知路由也跳转到游戏
-  res.redirect('/mir-game/');
+  return mapMonsters[mapId] || [];
+}
+
+function spawnMonstersForMap(mapId: string) {
+  const map = parsedMaps[mapId];
+  if (!map) {
+    mapMonsters[mapId] = [];
+    return;
+  }
+
+  const list: MonsterInstance[] = [];
+
+  // Find walkable tiles
+  const walkableTiles: number[] = [];
+  for (let i = 0; i < map.tiles.length; i++) {
+    if (map.tiles[i] === 0) walkableTiles.push(i);
+  }
+  if (walkableTiles.length === 0) {
+    mapMonsters[mapId] = [];
+    return;
+  }
+
+  // Find spawn data for this map
+  const spawns = monsterSpawns.filter(s => s.map === mapId);
+
+  // Determine monster count
+  const monsterCount = Math.min(30, Math.max(5, Math.floor(walkableTiles.length / 200)));
+
+  for (let i = 0; i < monsterCount; i++) {
+    let tx: number, ty: number;
+
+    if (spawns.length > 0) {
+      const spawn = spawns[i % spawns.length];
+      tx = spawn.x + Math.floor(Math.random() * spawn.range * 2) - spawn.range;
+      ty = spawn.y + Math.floor(Math.random() * spawn.range * 2) - spawn.range;
+      tx = Math.max(0, Math.min(map.width - 1, tx));
+      ty = Math.max(0, Math.min(map.height - 1, ty));
+      // Ensure walkable
+      if (map.tiles[ty * map.width + tx] !== 0) {
+        const tileIdx = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
+        tx = tileIdx % map.width;
+        ty = Math.floor(tileIdx / map.width);
+      }
+    } else {
+      const tileIdx = walkableTiles[Math.floor(Math.random() * walkableTiles.length)];
+      tx = tileIdx % map.width;
+      ty = Math.floor(tileIdx / map.width);
+    }
+
+    // Pick monster type
+    let monsterDef: MonsterDef | null = null;
+    if (spawns.length > 0) {
+      const spawn = spawns[i % spawns.length];
+      monsterDef = monstersByName[spawn.monster] || null;
+    }
+    if (!monsterDef) {
+      // Random monster from available
+      const idx = Math.floor(Math.random() * Math.min(monstersData.length, 50));
+      monsterDef = monstersData[idx] || null;
+    }
+    if (!monsterDef) continue;
+
+    list.push({
+      id: `m_${mapId}_${i}_${Date.now()}`,
+      monsterDef,
+      mapId,
+      x: tx,
+      y: ty,
+      homeX: tx,
+      homeY: ty,
+      hp: monsterDef.hp,
+      maxHp: monsterDef.hp,
+      state: 'idle',
+      lastMove: Date.now(),
+      lastAttack: 0,
+      deathTime: 0,
+    });
+  }
+
+  mapMonsters[mapId] = list;
+  console.log(`[GameMap] Spawned ${list.length} monsters on map ${mapId}`);
+}
+
+function isWalkable(mapId: string, x: number, y: number): boolean {
+  const map = parsedMaps[mapId];
+  if (!map) return x >= 0 && y >= 0; // No map data = allow
+  if (x < 0 || x >= map.width || y < 0 || y >= map.height) return false;
+  return map.tiles[y * map.width + x] === 0;
+}
+
+wss.on('connection', (ws: WebSocket) => {
+  let session: GameSession | null = null;
+
+  ws.on('message', (data: Buffer) => {
+    try {
+      const msg = JSON.parse(data.toString());
+
+      switch (msg.type) {
+        case 'join': {
+          const { token, characterId, mapId } = msg;
+
+          // Find user by token
+          const username = playerByToken.get(token);
+          if (!username) {
+            ws.send(JSON.stringify({ type: 'error', message: '无效的token' }));
+            return;
+          }
+
+          // Find character
+          let character: any = null;
+          if (characterId) {
+            character = charactersStore.get(characterId);
+          }
+          if (!character) {
+            // Use first character
+            const charIds = playerCharacters.get(username) || [];
+            if (charIds.length > 0) character = charactersStore.get(charIds[0]);
+          }
+          if (!character) {
+            ws.send(JSON.stringify({ type: 'error', message: '角色不存在' }));
+            return;
+          }
+
+          session = {
+            ws,
+            token,
+            username,
+            charId: character.id,
+            character,
+            mapId: mapId || character.mapId || '0',
+            x: character.x || 50,
+            y: character.y || 50,
+            hp: character.hp || character.maxHp,
+            maxHp: character.maxHp,
+            mp: character.mp || character.maxMp,
+            maxMp: character.maxMp,
+            level: character.level || 1,
+            exp: character.exp || 0,
+            lastAttack: 0,
+            targetId: null,
+          };
+
+          playerSessions.set(token, session);
+
+          // Ensure position is walkable
+          if (!isWalkable(session.mapId, session.x, session.y)) {
+            const map = parsedMaps[session.mapId];
+            if (map) {
+              for (let r = 1; r < 30; r++) {
+                let found = false;
+                for (let dx = -r; dx <= r && !found; dx++) {
+                  for (let dy = -r; dy <= r && !found; dy++) {
+                    if (isWalkable(session.mapId, session.x + dx, session.y + dy)) {
+                      session.x += dx;
+                      session.y += dy;
+                      found = true;
+                    }
+                  }
+                }
+                if (found) break;
+              }
+            }
+          }
+
+          // Get map info
+          const map = parsedMaps[session.mapId];
+          const monsters = getMapMonsterList(session.mapId).filter(m => m.state !== 'dead');
+
+          // Send initial state
+          ws.send(JSON.stringify({
+            type: 'gameState',
+            player: {
+              x: session.x,
+              y: session.y,
+              hp: session.hp,
+              maxHp: session.maxHp,
+              mp: session.mp,
+              maxMp: session.maxMp,
+              level: session.level,
+              exp: session.exp,
+              expNext: calcExpForLevel(session.level),
+              name: character.name,
+              class: character.class,
+              atk: character.DC,
+              def: character.AC,
+            },
+            map: {
+              id: session.mapId,
+              width: map?.width || 100,
+              height: map?.height || 100,
+              name: mapsById[session.mapId]?.title || `地图${session.mapId}`,
+            },
+            monsters: monsters.map(m => ({
+              id: m.id,
+              name: m.monsterDef.name,
+              x: m.x,
+              y: m.y,
+              hp: m.hp,
+              maxHp: m.maxHp,
+              level: m.monsterDef.level,
+            })),
+          }));
+          break;
+        }
+
+        case 'move': {
+          if (!session) return;
+          const { x, y } = msg;
+          if (typeof x !== 'number' || typeof y !== 'number') return;
+          if (isWalkable(session.mapId, Math.floor(x), Math.floor(y))) {
+            session.x = Math.floor(x);
+            session.y = Math.floor(y);
+          }
+          break;
+        }
+
+        case 'attack': {
+          if (!session) return;
+          const now = Date.now();
+          if (now - session.lastAttack < 500) return;
+          session.lastAttack = now;
+
+          const { targetId } = msg;
+          const monsters = getMapMonsterList(session.mapId);
+          const monster = monsters.find(m => m.id === targetId);
+          if (!monster || monster.state === 'dead') return;
+
+          // Check distance
+          const dist = Math.abs(session.x - monster.x) + Math.abs(session.y - monster.y);
+          if (dist > 3) {
+            ws.send(JSON.stringify({ type: 'systemMsg', message: '距离太远，无法攻击' }));
+            return;
+          }
+
+          // Calculate damage
+          const damage = calcDamage(
+            { DC: session.character.DC, DCMax: session.character.DCMax, Level: session.level, Accuracy: session.character.Accuracy },
+            { AC: monster.monsterDef.ac, ACMax: monster.monsterDef.ac + 5, Level: monster.monsterDef.level, Agility: 1 },
+          );
+
+          monster.hp -= damage;
+
+          if (damage > 0) {
+            ws.send(JSON.stringify({
+              type: 'damage',
+              targetId,
+              damage,
+              isCrit: damage > (session.character.DC || 5),
+              x: monster.x,
+              y: monster.y,
+            }));
+          } else {
+            ws.send(JSON.stringify({ type: 'miss', targetId, x: monster.x, y: monster.y }));
+          }
+
+          if (monster.hp <= 0) {
+            monster.state = 'dead';
+            monster.deathTime = now;
+
+            // Grant exp
+            const expGain = monster.monsterDef.exp;
+            session.exp += expGain;
+            const expNeeded = calcExpForLevel(session.level);
+            let leveledUp = false;
+            while (session.level < 100 && session.exp >= calcExpForLevel(session.level)) {
+              session.exp -= calcExpForLevel(session.level);
+              session.level++;
+              leveledUp = true;
+
+              const base = CLASS_BASE_STATS[session.character.class] || CLASS_BASE_STATS.warrior;
+              session.maxHp += base.hpGain;
+              session.maxMp += base.mpGain;
+              session.hp = session.maxHp;
+              session.mp = session.maxMp;
+              session.character.DC += Math.floor(base.baseAttack * 0.1) + 1;
+              session.character.DCMax = Math.floor(session.character.DC * 1.5);
+              session.character.AC += 1;
+              session.character.ACMax = Math.floor(session.character.AC * 0.5);
+            }
+
+            // Update character
+            session.character.level = session.level;
+            session.character.exp = session.exp;
+            session.character.hp = session.hp;
+            session.character.maxHp = session.maxHp;
+            session.character.mp = session.mp;
+            session.character.maxMp = session.maxMp;
+
+            // Gold drop
+            const goldDrop = Math.floor(Math.random() * monster.monsterDef.level * 10) + 1;
+            session.character.gold = (session.character.gold || 0) + goldDrop;
+
+            ws.send(JSON.stringify({
+              type: 'monsterDead',
+              targetId,
+              exp: expGain,
+              gold: goldDrop,
+              level: session.level,
+              hp: session.hp,
+              maxHp: session.maxHp,
+              expTotal: session.exp,
+              expNext: calcExpForLevel(session.level),
+              leveledUp,
+            }));
+
+            // Respawn after 30 seconds
+            setTimeout(() => {
+              const rMap = parsedMaps[monster.mapId];
+              if (rMap) {
+                const wTiles: number[] = [];
+                for (let i = 0; i < rMap.tiles.length; i++) {
+                  if (rMap.tiles[i] === 0) wTiles.push(i);
+                }
+                if (wTiles.length > 0) {
+                  const tileIdx = wTiles[Math.floor(Math.random() * wTiles.length)];
+                  monster.x = tileIdx % rMap.width;
+                  monster.y = Math.floor(tileIdx / rMap.width);
+                  monster.homeX = monster.x;
+                  monster.homeY = monster.y;
+                }
+              }
+              monster.hp = monster.monsterDef.hp;
+              monster.maxHp = monster.hp;
+              monster.state = 'idle';
+            }, 30000);
+          } else {
+            // Monster fights back
+            const monsterDmg = calcDamage(
+              { DC: monster.monsterDef.dc, DCMax: monster.monsterDef.dcMax, Level: monster.monsterDef.level, Accuracy: 1 },
+              { AC: session.character.AC, ACMax: session.character.ACMax, Level: session.level, Agility: session.character.Agility },
+            );
+            session.hp -= monsterDmg;
+
+            if (monsterDmg > 0) {
+              ws.send(JSON.stringify({
+                type: 'playerHit',
+                damage: monsterDmg,
+                hp: session.hp,
+                maxHp: session.maxHp,
+              }));
+            }
+
+            if (session.hp <= 0) {
+              session.hp = Math.floor(session.maxHp * 0.3);
+              session.character.hp = session.hp;
+              ws.send(JSON.stringify({
+                type: 'playerDead',
+                hp: session.hp,
+                maxHp: session.maxHp,
+                message: '你已阵亡，已自动复活',
+              }));
+            }
+          }
+
+          // Send monster update
+          ws.send(JSON.stringify({
+            type: 'monsterUpdate',
+            targetId: monster.id,
+            hp: monster.hp,
+            maxHp: monster.maxHp,
+            x: monster.x,
+            y: monster.y,
+          }));
+          break;
+        }
+
+        case 'getMapData': {
+          if (!session) return;
+          const mapId = msg.mapId || session.mapId;
+          const map = parsedMaps[mapId];
+          if (!map) {
+            ws.send(JSON.stringify({ type: 'error', message: '地图数据不存在' }));
+            return;
+          }
+          // RLE encode
+          const rle: number[] = [];
+          let current = map.tiles[0];
+          let count = 1;
+          for (let i = 1; i < map.tiles.length; i++) {
+            if (map.tiles[i] === current && count < 255) {
+              count++;
+            } else {
+              rle.push(current, count);
+              current = map.tiles[i];
+              count = 1;
+            }
+          }
+          rle.push(current, count);
+
+          ws.send(JSON.stringify({
+            type: 'mapData',
+            id: map.id,
+            width: map.width,
+            height: map.height,
+            rle,
+          }));
+          break;
+        }
+
+        case 'monster_killed': {
+          // Client-side kill notification (for client-driven combat)
+          if (!session) return;
+          // Just acknowledge
+          break;
+        }
+      }
+    } catch (e) {
+      console.error('[WS] Error:', e);
+    }
+  });
+
+  ws.on('close', () => {
+    if (session) {
+      // Save character state
+      const char = charactersStore.get(session.charId);
+      if (char) {
+        char.x = session.x;
+        char.y = session.y;
+        char.hp = session.hp;
+        char.mp = session.mp;
+        char.level = session.level;
+        char.exp = session.exp;
+        char.maxHp = session.maxHp;
+        char.maxMp = session.maxMp;
+        char.DC = session.character.DC;
+        char.DCMax = session.character.DCMax;
+        char.AC = session.character.AC;
+        char.ACMax = session.character.ACMax;
+      }
+      playerSessions.delete(session.token);
+    }
+  });
 });
 
-// Create HTTP server
-const server = http.createServer(app);
+// Monster AI tick (every 2 seconds)
+setInterval(() => {
+  for (const [mapId, monsters] of Object.entries(mapMonsters)) {
+    const map = parsedMaps[mapId];
+    if (!map) continue;
 
+    for (const monster of monsters) {
+      if (monster.state === 'dead') continue;
+
+      const now = Date.now();
+      if (now - monster.lastMove < 2000) continue;
+      monster.lastMove = now;
+
+      // Check if any player is nearby
+      let nearestPlayer: GameSession | null = null;
+      let nearestDist = Infinity;
+      for (const [, sess] of playerSessions) {
+        if (sess.mapId !== mapId) continue;
+        const d = Math.abs(sess.x - monster.x) + Math.abs(sess.y - monster.y);
+        if (d < nearestDist) {
+          nearestDist = d;
+          nearestPlayer = sess;
+        }
+      }
+
+      if (nearestPlayer && nearestDist < 8) {
+        // Chase player
+        monster.state = 'chase';
+        const dx = Math.sign(nearestPlayer.x - monster.x);
+        const dy = Math.sign(nearestPlayer.y - monster.y);
+
+        if (nearestDist <= 1) {
+          // Attack player
+          if (now - monster.lastAttack > 1500) {
+            monster.lastAttack = now;
+            const damage = calcDamage(
+              { DC: monster.monsterDef.dc, DCMax: monster.monsterDef.dcMax, Level: monster.monsterDef.level, Accuracy: 1 },
+              { AC: nearestPlayer.character.AC, ACMax: nearestPlayer.character.ACMax, Level: nearestPlayer.level, Agility: nearestPlayer.character.Agility },
+            );
+            if (damage > 0) {
+              nearestPlayer.hp -= damage;
+              nearestPlayer.ws.send(JSON.stringify({
+                type: 'playerHit',
+                damage,
+                hp: nearestPlayer.hp,
+                maxHp: nearestPlayer.maxHp,
+              }));
+              if (nearestPlayer.hp <= 0) {
+                nearestPlayer.hp = Math.floor(nearestPlayer.maxHp * 0.3);
+                nearestPlayer.character.hp = nearestPlayer.hp;
+                nearestPlayer.ws.send(JSON.stringify({
+                  type: 'playerDead',
+                  hp: nearestPlayer.hp,
+                  maxHp: nearestPlayer.maxHp,
+                  message: '你已阵亡，已自动复活',
+                }));
+              }
+            }
+          }
+        } else {
+          // Move toward player
+          if (dx !== 0) {
+            const nx = monster.x + dx;
+            if (nx >= 0 && nx < map.width && map.tiles[monster.y * map.width + nx] === 0) {
+              monster.x = nx;
+            }
+          } else if (dy !== 0) {
+            const ny = monster.y + dy;
+            if (ny >= 0 && ny < map.height && map.tiles[ny * map.width + monster.x] === 0) {
+              monster.y = ny;
+            }
+          }
+        }
+      } else {
+        // Idle patrol
+        monster.state = 'idle';
+        const pdx = Math.floor(Math.random() * 3) - 1;
+        const pdy = Math.floor(Math.random() * 3) - 1;
+        const nx = monster.x + pdx;
+        const ny = monster.y + pdy;
+
+        // Don't wander too far from home
+        if (Math.abs(nx - monster.homeX) < 8 && Math.abs(ny - monster.homeY) < 8 &&
+            nx >= 0 && nx < map.width && ny >= 0 && ny < map.height &&
+            map.tiles[ny * map.width + nx] === 0) {
+          monster.x = nx;
+          monster.y = ny;
+        }
+      }
+    }
+  }
+}, 2000);
+
+// ============================================================
+// Start Server
+// ============================================================
 server.listen(port, () => {
-  console.log(`🎮 AI Legend of MIR Server running at http://localhost:${port}/`);
-  console.log(`🌐 Game: http://localhost:${port}/mir-game/`);
-  console.log(`📊 Health: http://localhost:${port}/api/v1/health`);
-
-  // Initialize WebSocket game server
-  gameServer.init(server);
+  console.log(`[Server] Running on port ${port}`);
+  console.log(`[Server] Maps: ${Object.keys(parsedMaps).length}`);
+  console.log(`[Server] Monsters: ${monstersData.length}`);
+  console.log(`[Server] Items: ${itemsData.length}`);
+  console.log(`[Server] Skills: ${skillsData.length}`);
+  console.log(`[Server] Game URL: http://localhost:${port}/mir-game/`);
 });

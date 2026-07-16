@@ -1,40 +1,35 @@
-// 传奇先锋 - 游戏主入口
-(function () {
-  'use strict';
+// ============================================================
+// AI传奇 - 玛法大陆 | 游戏入口
+// ============================================================
+const GAME_VERSION = '2.0.0';
+const API_BASE = ''; // Same origin
 
-  const config = {
-    type: Phaser.AUTO,
-    width: window.innerWidth,
-    height: window.innerHeight,
-    parent: 'game-container',
-    backgroundColor: GAME_CONFIG.COLORS.BACKGROUND,
-    scale: {
-      mode: Phaser.Scale.RESIZE,
-      autoCenter: Phaser.Scale.CENTER_BOTH,
-    },
-    scene: [BootScene, MenuScene, CharacterSelectScene, GameScene],
-    physics: {
-      default: 'arcade',
-      arcade: { debug: false },
-    },
-    input: {
-      activePointers: 3, // 支持多点触控
-    },
-  };
+const config = {
+  type: Phaser.AUTO,
+  width: window.innerWidth,
+  height: window.innerHeight,
+  parent: 'game-container',
+  backgroundColor: '#000000',
+  scale: {
+    mode: Phaser.Scale.RESIZE,
+    autoCenter: Phaser.Scale.CENTER_BOTH,
+  },
+  scene: [BootScene, MenuScene, CharacterSelectScene, GameScene],
+  input: {
+    activePointers: 3,
+  },
+  render: {
+    pixelArt: true,
+    antialias: false,
+  },
+};
 
-  const game = new Phaser.Game(config);
+const game = new Phaser.Game(config);
 
-  // 全局状态
-  window.MIR = {
-    game: game,
-    token: null,
-    username: null,
-    character: null,
-    ws: null,
-  };
-
-  // 窗口大小变化
-  window.addEventListener('resize', () => {
-    game.scale.resize(window.innerWidth, window.innerHeight);
-  });
-})();
+// Global game data
+window.gameData = {
+  token: null,
+  username: null,
+  playerId: null,
+  character: null,
+};

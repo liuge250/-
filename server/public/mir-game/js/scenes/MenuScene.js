@@ -1,209 +1,187 @@
-// 传奇先锋 - 菜单场景（登录/注册）
+// ============================================================
+// MenuScene - 登录/注册场景
+// ============================================================
 class MenuScene extends Phaser.Scene {
-  constructor() {
-    super({ key: 'MenuScene' });
-    this.isLogin = true;
-  }
+  constructor() { super('MenuScene'); }
 
   create() {
-    const w = this.cameras.main.width;
-    const h = this.cameras.main.height;
-    const C = GAME_CONFIG.COLORS;
+    const { width, height } = this.scale;
+    const centerX = width / 2;
+    const centerY = height / 2;
 
     // 背景
-    this.add.rectangle(w / 2, h / 2, w, h, 0x0A0A0F);
+    this.add.rectangle(0, 0, width, height, 0x0a0a1a).setOrigin(0);
 
     // 装饰粒子
     for (let i = 0; i < 50; i++) {
-      const x = Phaser.Math.Between(0, w);
-      const y = Phaser.Math.Between(0, h);
-      const alpha = Phaser.Math.FloatBetween(0.1, 0.4);
-      const size = Phaser.Math.Between(1, 3);
-      const star = this.add.rectangle(x, y, size, size, 0xC9A96E, alpha);
+      const star = this.add.circle(
+        Math.random() * width,
+        Math.random() * height,
+        Math.random() * 2 + 0.5,
+        0xFFD700,
+        Math.random() * 0.5 + 0.2
+      );
       this.tweens.add({
-        targets: star,
-        alpha: { from: alpha, to: 0 },
-        duration: Phaser.Math.Between(2000, 5000),
-        repeat: -1,
+        targets: star, alpha: 0, duration: 2000 + Math.random() * 3000,
+        yoyo: true, repeat: -1,
       });
     }
 
     // 标题
-    this.add.text(w / 2, h * 0.15, '传奇先锋', {
-      fontFamily: 'serif',
-      fontSize: '48px',
-      color: '#C9A96E',
-      fontStyle: 'bold',
-      stroke: '#000000',
-      strokeThickness: 4,
+    this.add.text(centerX, centerY - 180, 'AI传奇', {
+      fontSize: '56px', fill: '#FFD700', fontFamily: 'serif',
+      stroke: '#8B4513', strokeThickness: 4,
     }).setOrigin(0.5);
 
-    this.add.text(w / 2, h * 0.15 + 50, 'AI时代的致敬版传奇', {
-      fontFamily: 'sans-serif',
-      fontSize: '16px',
-      color: '#888888',
+    this.add.text(centerX, centerY - 120, '玛法大陆', {
+      fontSize: '28px', fill: '#C0A060', fontFamily: 'serif',
     }).setOrigin(0.5);
 
     // 登录面板
-    const panelW = 360;
-    const panelH = 380;
-    const panelX = w / 2 - panelW / 2;
-    const panelY = h * 0.3;
+    const panelW = Math.min(360, width - 40);
+    const panelH = 320;
+    const panelX = centerX - panelW / 2;
+    const panelY = centerY - 60;
 
-    const panel = this.add.rectangle(w / 2, panelY + panelH / 2, panelW, panelH, 0x1A1A2E, 0.9);
-    panel.setStrokeStyle(2, 0xC9A96E, 0.5);
-    panel.setOrigin(0.5);
+    this.add.rectangle(panelX, panelY, panelW, panelH, 0x1a1a2e, 0.9)
+      .setOrigin(0).setStrokeStyle(2, 0xFFD700);
 
-    // 标题切换
-    this.titleText = this.add.text(w / 2, panelY + 30, '账号登录', {
-      fontFamily: 'sans-serif',
-      fontSize: '20px',
-      color: '#C9A96E',
-      fontStyle: 'bold',
-    }).setOrigin(0.5);
-
-    // 用户名输入
-    const inputBg1 = this.add.rectangle(w / 2, panelY + 90, 280, 44, 0x0A0A0F, 0.8);
-    inputBg1.setStrokeStyle(1, 0x444444);
-    inputBg1.setOrigin(0.5);
-
-    this.usernameInput = this.add.dom(w / 2, panelY + 90).createFromHTML(`
-      <input type="text" id="username-input" placeholder="请输入账号"
-        style="width:260px;height:36px;background:transparent;border:none;color:#E8E8E8;font-size:16px;outline:none;text-align:center;"
-        maxlength="20">
-    `);
-
-    // 密码输入
-    const inputBg2 = this.add.rectangle(w / 2, panelY + 150, 280, 44, 0x0A0A0F, 0.8);
-    inputBg2.setStrokeStyle(1, 0x444444);
-    inputBg2.setOrigin(0.5);
-
-    this.passwordInput = this.add.dom(w / 2, panelY + 150).createFromHTML(`
-      <input type="password" id="password-input" placeholder="请输入密码"
-        style="width:260px;height:36px;background:transparent;border:none;color:#E8E8E8;font-size:16px;outline:none;text-align:center;"
-        maxlength="20">
-    `);
-
-    // 登录按钮
-    this.loginBtn = this.createButton(w / 2, panelY + 220, '登 录', () => this.handleSubmit());
-
-    // 切换注册/登录
-    this.switchText = this.add.text(w / 2, panelY + 280, '没有账号？点击注册', {
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      color: '#C9A96E',
+    // Tab 切换
+    let isLogin = true;
+    const tabLogin = this.add.text(centerX - 60, panelY + 15, '登录', {
+      fontSize: '18px', fill: '#FFD700', fontFamily: 'serif',
     }).setOrigin(0.5).setInteractive({ useHandCursor: true });
 
-    this.switchText.on('pointerdown', () => {
-      this.isLogin = !this.isLogin;
-      this.titleText.setText(this.isLogin ? '账号登录' : '账号注册');
-      this.loginBtn.setText(this.isLogin ? '登 录' : '注 册');
-      this.switchText.setText(this.isLogin ? '没有账号？点击注册' : '已有账号？点击登录');
+    const tabRegister = this.add.text(centerX + 60, panelY + 15, '注册', {
+      fontSize: '18px', fill: '#888888', fontFamily: 'serif',
+    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+
+    const inputW = panelW - 60;
+    const inputX = panelX + 30;
+
+    // 用户名
+    this.add.text(inputX, panelY + 55, '用户名', { fontSize: '13px', fill: '#aaaaaa' });
+    const usernameBg = this.add.rectangle(inputX, panelY + 75, inputW, 36, 0x2a2a3e, 1)
+      .setOrigin(0).setStrokeStyle(1, 0x444466);
+    const usernameText = this.add.text(inputX + 10, panelY + 82, '', {
+      fontSize: '15px', fill: '#ffffff', fontFamily: 'monospace',
     });
 
-    // 提示文本
-    this.hintText = this.add.text(w / 2, panelY + 330, '', {
-      fontFamily: 'sans-serif',
-      fontSize: '13px',
-      color: '#FF5252',
+    // 密码
+    this.add.text(inputX, panelY + 120, '密码', { fontSize: '13px', fill: '#aaaaaa' });
+    const passwordBg = this.add.rectangle(inputX, panelY + 140, inputW, 36, 0x2a2a3e, 1)
+      .setOrigin(0).setStrokeStyle(1, 0x444466);
+    const passwordText = this.add.text(inputX + 10, panelY + 147, '', {
+      fontSize: '15px', fill: '#ffffff', fontFamily: 'monospace',
+    });
+
+    // 状态消息
+    const statusText = this.add.text(centerX, panelY + 200, '', {
+      fontSize: '13px', fill: '#ff4444',
     }).setOrigin(0.5);
 
-    // 底部信息
-    this.add.text(w / 2, h - 30, '基于 OpenMir2 & Crystal 二次开发', {
-      fontFamily: 'sans-serif',
-      fontSize: '12px',
-      color: '#555555',
+    // 提交按钮
+    const btnW = 200;
+    const btnH = 42;
+    const btnBg = this.add.rectangle(centerX, panelY + 250, btnW, btnH, 0x8B4513, 1)
+      .setOrigin(0.5).setStrokeStyle(2, 0xFFD700).setInteractive({ useHandCursor: true });
+    const btnText = this.add.text(centerX, panelY + 250, '登录', {
+      fontSize: '16px', fill: '#FFD700', fontFamily: 'serif',
     }).setOrigin(0.5);
 
-    // 检查是否已登录
-    const savedToken = localStorage.getItem('mir_token');
-    const savedUsername = localStorage.getItem('mir_username');
-    if (savedToken && savedUsername) {
-      window.MIR.token = savedToken;
-      window.MIR.username = savedUsername;
-      this.checkExistingCharacter();
-    }
-  }
+    // 输入状态
+    let activeInput = 'username';
+    let username = '';
+    let password = '';
 
-  createButton(x, y, text, callback) {
-    const btn = this.add.text(x, y, text, {
-      fontFamily: 'sans-serif',
-      fontSize: '18px',
-      color: '#0A0A0F',
-      fontStyle: 'bold',
-      backgroundColor: '#C9A96E',
-      padding: { x: 40, y: 12 },
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    // 高亮当前输入框
+    const updateHighlight = () => {
+      usernameBg.setStrokeStyle(1, activeInput === 'username' ? 0xFFD700 : 0x444466);
+      passwordBg.setStrokeStyle(1, activeInput === 'password' ? 0xFFD700 : 0x444466);
+    };
 
-    btn.on('pointerover', () => btn.setStyle({ backgroundColor: '#D4B87A' }));
-    btn.on('pointerout', () => btn.setStyle({ backgroundColor: '#C9A96E' }));
-    btn.on('pointerdown', callback);
-    return btn;
-  }
+    // 点击切换输入框
+    usernameBg.on('pointerdown', () => { activeInput = 'username'; updateHighlight(); });
+    passwordBg.on('pointerdown', () => { activeInput = 'password'; updateHighlight(); });
 
-  async handleSubmit() {
-    const usernameEl = document.getElementById('username-input');
-    const passwordEl = document.getElementById('password-input');
-    const username = usernameEl?.value?.trim();
-    const password = passwordEl?.value?.trim();
+    // Tab 切换
+    tabLogin.on('pointerdown', () => {
+      isLogin = true;
+      tabLogin.setColor('#FFD700');
+      tabRegister.setColor('#888888');
+      btnText.setText('登录');
+      statusText.setText('');
+    });
+    tabRegister.on('pointerdown', () => {
+      isLogin = false;
+      tabRegister.setColor('#FFD700');
+      tabLogin.setColor('#888888');
+      btnText.setText('注册');
+      statusText.setText('');
+    });
 
-    if (!username || !password) {
-      this.hintText.setText('请输入账号和密码');
-      return;
-    }
-
-    if (username.length < 3 || password.length < 3) {
-      this.hintText.setText('账号和密码至少3个字符');
-      return;
-    }
-
-    this.hintText.setText('处理中...');
-    this.loginBtn.disableInteractive();
-
-    try {
-      const endpoint = this.isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register';
-      const response = await fetch(`${GAME_CONFIG.API_BASE}${endpoint}`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ username, password }),
-      });
-
-      const data = await response.json();
-
-      if (response.ok && data.token) {
-        window.MIR.token = data.token;
-        window.MIR.username = username;
-        localStorage.setItem('mir_token', data.token);
-        localStorage.setItem('mir_username', username);
-        this.checkExistingCharacter();
-      } else {
-        this.hintText.setText(data.error || data.message || '操作失败');
-        this.loginBtn.setInteractive();
+    // 键盘输入
+    this.input.keyboard.on('keydown', (event) => {
+      if (event.key === 'Tab') {
+        activeInput = activeInput === 'username' ? 'password' : 'username';
+        updateHighlight();
+        return;
       }
-    } catch (err) {
-      this.hintText.setText('网络错误，请重试');
-      this.loginBtn.setInteractive();
-    }
-  }
-
-  async checkExistingCharacter() {
-    try {
-      const response = await fetch(`${GAME_CONFIG.API_BASE}/api/v1/character/list`, {
-        headers: { 'Authorization': `Bearer ${window.MIR.token}` },
-      });
-      const data = await response.json();
-
-      if (data.characters && data.characters.length > 0) {
-        // 有角色，直接进入游戏
-        window.MIR.character = data.characters[0];
-        this.scene.start('GameScene');
-      } else {
-        // 没有角色，进入角色创建
-        this.scene.start('CharacterSelectScene');
+      if (event.key === 'Enter') {
+        btnBg.emit('pointerdown');
+        return;
       }
-    } catch (err) {
-      // 获取角色列表失败，进入角色创建
-      this.scene.start('CharacterSelectScene');
-    }
+      if (event.key === 'Backspace') {
+        if (activeInput === 'username') username = username.slice(0, -1);
+        else password = password.slice(0, -1);
+      } else if (event.key.length === 1) {
+        if (activeInput === 'username' && username.length < 20) username += event.key;
+        else if (activeInput === 'password' && password.length < 20) password += event.key;
+      }
+      usernameText.setText(username || (activeInput === 'username' ? '|' : ''));
+      passwordText.setText(password ? '*'.repeat(password.length) : (activeInput === 'password' ? '|' : ''));
+    });
+
+    // 提交
+    btnBg.on('pointerdown', async () => {
+      if (!username || !password) {
+        statusText.setText('请输入用户名和密码');
+        return;
+      }
+      statusText.setText('处理中...');
+      statusText.setColor('#aaaaaa');
+
+      try {
+        const endpoint = isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register';
+        const resp = await fetch(API_BASE + endpoint, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ username, password }),
+        });
+        const data = await resp.json();
+        if (!resp.ok) {
+          statusText.setText(data.error || '操作失败');
+          statusText.setColor('#ff4444');
+          return;
+        }
+        window.gameData.token = data.token;
+        window.gameData.username = data.username;
+        window.gameData.playerId = data.username;
+        statusText.setText('登录成功!');
+        statusText.setColor('#00ff00');
+        this.time.delayedCall(500, () => this.scene.start('CharacterSelectScene'));
+      } catch (e) {
+        statusText.setText('网络错误: ' + e.message);
+        statusText.setColor('#ff4444');
+      }
+    });
+
+    btnBg.on('pointerover', () => btnBg.setFillStyle(0xA0522D));
+    btnBg.on('pointerout', () => btnBg.setFillStyle(0x8B4513));
+
+    // 版本信息
+    this.add.text(10, height - 20, `v${GAME_VERSION}`, {
+      fontSize: '11px', fill: '#555555',
+    });
   }
 }

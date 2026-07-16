@@ -1,42 +1,54 @@
-// 传奇先锋 - 启动场景
+// ============================================================
+// BootScene - 启动场景
+// ============================================================
 class BootScene extends Phaser.Scene {
-  constructor() {
-    super({ key: 'BootScene' });
-  }
+  constructor() { super('BootScene'); }
 
   preload() {
-    // 显示加载进度
-    const w = this.cameras.main.width;
-    const h = this.cameras.main.height;
+    const { width, height } = this.scale;
+    const centerX = width / 2;
+    const centerY = height / 2;
 
-    const progressBg = this.add.rectangle(w / 2, h / 2, 400, 30, 0x1A1A2E, 0.8);
-    progressBg.setStrokeStyle(2, 0xC9A96E);
-
-    const progressBar = this.add.rectangle(w / 2 - 195, h / 2, 0, 24, 0xC9A96E);
-    progressBar.setOrigin(0, 0.5);
-
-    const loadText = this.add.text(w / 2, h / 2 - 40, '传奇先锋', {
-      fontFamily: 'serif',
-      fontSize: '36px',
-      color: '#C9A96E',
-      fontStyle: 'bold',
+    // Loading text
+    const loadingText = this.add.text(centerX, centerY - 30, 'AI传奇', {
+      fontSize: '48px', fill: '#FFD700', fontFamily: 'serif',
+      stroke: '#8B4513', strokeThickness: 4,
     }).setOrigin(0.5);
 
-    const subText = this.add.text(w / 2, h / 2 + 40, 'AI时代的致敬版传奇', {
-      fontFamily: 'sans-serif',
-      fontSize: '14px',
-      color: '#888888',
+    const subText = this.add.text(centerX, centerY + 20, '正在加载...', {
+      fontSize: '16px', fill: '#C0A060',
     }).setOrigin(0.5);
+
+    // Progress bar
+    const barW = 300;
+    const barH = 12;
+    const barX = centerX - barW / 2;
+    const barY = centerY + 50;
+
+    this.add.rectangle(barX, barY, barW, barH, 0x333333, 1).setOrigin(0);
+    const progressBar = this.add.rectangle(barX, barY, 0, barH, 0xFFD700, 1).setOrigin(0);
 
     this.load.on('progress', (value) => {
-      progressBar.width = 390 * value;
+      progressBar.width = barW * value;
     });
 
-    this.load.on('complete', () => {
-      progressBg.destroy();
-      progressBar.destroy();
-      loadText.destroy();
-      subText.destroy();
+    // Load tileset images
+    const basePath = 'assets/tilesets/';
+    this.load.image('town_tileset', basePath + 'town_tileset.jpg');
+    this.load.image('cave_tileset', basePath + 'cave_tileset.jpg');
+    this.load.image('desert_tileset', basePath + 'desert_tileset.jpg');
+    this.load.image('temple_tileset', basePath + 'temple_tileset.jpg');
+
+    // Load sprite images
+    const spritePath = 'assets/sprites/';
+    this.load.image('warrior_sprite', spritePath + 'warrior_sprites.jpg');
+    this.load.image('wizard_sprite', spritePath + 'wizard_sprites.jpg');
+    this.load.image('taoist_sprite', spritePath + 'taoist_sprites.jpg');
+    this.load.image('monsters_sprite', spritePath + 'monsters_sprites.jpg');
+
+    // Handle load errors gracefully
+    this.load.on('loaderror', (file) => {
+      console.warn('Failed to load:', file.key);
     });
   }
 
