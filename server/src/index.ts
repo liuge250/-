@@ -21,16 +21,6 @@ app.use(express.urlencoded({ limit: '50mb', extended: true }));
 const mirGamePath = path.resolve(__dirname, '../public/mir-game');
 app.use('/mir-game', express.static(mirGamePath));
 
-// Serve Expo client static assets (production)
-// 优先使用 server/public/client (已提交到git)，回退到 client/dist (开发环境)
-const clientDistPath = path.resolve(__dirname, '../public/client');
-const clientDevPath = path.resolve(__dirname, '../../client/dist');
-const activeClientPath = fs.existsSync(clientDistPath) ? clientDistPath : clientDevPath;
-if (fs.existsSync(activeClientPath)) {
-  app.use('/_expo', express.static(path.join(activeClientPath, '_expo')));
-  app.use('/assets', express.static(path.join(activeClientPath, 'assets')));
-}
-
 // Game data API endpoints (serve JSON data for the game client)
 const gameDataPath = path.resolve(__dirname, '../../mir-tools/game-data');
 app.get('/api/v1/game/data/:filename', (req: any, res: any) => {
@@ -282,36 +272,19 @@ app.get('/api/v1/classes', (req, res) => {
   res.json({ classes: Object.values(CLASSES) });
 });
 
-// 根路径 → Expo client (登录页)
-if (fs.existsSync(activeClientPath)) {
-  app.get('/', (req: any, res: any) => {
-    res.sendFile(path.join(activeClientPath, 'index.html'));
-  });
-} else {
-  // 没有Expo客户端，根路径返回安装页
-  app.get('/', (req: any, res: any) => {
-    res.sendFile(path.join(mirGamePath, 'install.html'));
-  });
-}
+// 根路径 → 直接跳转到游戏
+app.get('/', (req: any, res: any) => {
+  res.redirect('/mir-game/');
+});
 
-// 其他路由 → Expo client SPA (if exists)
-if (fs.existsSync(activeClientPath)) {
-  app.get('*', (req: any, res: any) => {
-    // 如果是 /mir-game/ 下的请求，让静态文件中间件处理
-    if (req.path.startsWith('/mir-game')) {
-      return res.sendFile(path.join(mirGamePath, 'index.html'));
-    }
-    res.sendFile(path.join(activeClientPath, 'index.html'));
-  });
-} else {
-  // 没有Expo客户端，根路径返回安装页
-  app.get('*', (req: any, res: any) => {
-    if (req.path.startsWith('/mir-game')) {
-      return res.sendFile(path.join(mirGamePath, 'index.html'));
-    }
-    res.sendFile(path.join(mirGamePath, 'install.html'));
-  });
-}
+// 其他路由 → 游戏页面
+app.get('*', (req: any, res: any) => {
+  if (req.path.startsWith('/mir-game')) {
+    return res.sendFile(path.join(mirGamePath, 'index.html'));
+  }
+  // 其他未知路由也跳转到游戏
+  res.redirect('/mir-game/');
+});
 
 // Create HTTP server
 const server = http.createServer(app);
