@@ -67,8 +67,7 @@ export default ({ config }: ConfigContext): ExpoConfig => {
           "microphonePermission": `游戏先锋App需要访问麦克风以录制视频声音。`,
           "recordAudioAndroid": true
         }
-      ],
-      "react-native-webview"
+      ]
     ],
     "experiments": {
       "typedRoutes": true
