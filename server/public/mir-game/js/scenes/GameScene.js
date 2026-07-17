@@ -510,6 +510,7 @@ class GameScene extends Phaser.Scene {
 
   connectWebSocket() {
     try {
+      // 使用当前页面的origin，确保WebSocket和页面在同一域名
       const wsProtocol = location.protocol === 'https:' ? 'wss:' : 'ws:';
       const wsUrl = `${wsProtocol}//${location.host}/ws`;
       this.ws = new WebSocket(wsUrl);

@@ -2,7 +2,8 @@
 // AI传奇 - 玛法大陆 | 游戏入口
 // ============================================================
 const GAME_VERSION = '2.0.0';
-const API_BASE = ''; // Same origin
+// 自动检测API地址：使用当前页面的origin，确保API和页面在同一域名
+const API_BASE = window.location.origin;
 
 const config = {
   type: Phaser.AUTO,
