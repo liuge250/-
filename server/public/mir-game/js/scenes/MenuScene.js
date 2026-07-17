@@ -1,5 +1,5 @@
 // ============================================================
-// MenuScene - 登录/注册场景
+// MenuScene - 登录/注册场景 (使用HTML输入框，支持手机键盘)
 // ============================================================
 class MenuScene extends Phaser.Scene {
   constructor() { super('MenuScene'); }
@@ -28,128 +28,203 @@ class MenuScene extends Phaser.Scene {
     }
 
     // 标题
-    this.add.text(centerX, centerY - 180, 'AI传奇', {
+    this.add.text(centerX, centerY - 200, 'AI传奇', {
       fontSize: '56px', fill: '#FFD700', fontFamily: 'serif',
       stroke: '#8B4513', strokeThickness: 4,
     }).setOrigin(0.5);
 
-    this.add.text(centerX, centerY - 120, '玛法大陆', {
+    this.add.text(centerX, centerY - 140, '玛法大陆', {
       fontSize: '28px', fill: '#C0A060', fontFamily: 'serif',
     }).setOrigin(0.5);
 
-    // 登录面板
-    const panelW = Math.min(360, width - 40);
-    const panelH = 320;
-    const panelX = centerX - panelW / 2;
-    const panelY = centerY - 60;
+    // 创建HTML输入表单
+    this.createHTMLForm(centerX, centerY);
+  }
 
-    this.add.rectangle(panelX, panelY, panelW, panelH, 0x1a1a2e, 0.9)
-      .setOrigin(0).setStrokeStyle(2, 0xFFD700);
+  createHTMLForm(centerX, centerY) {
+    const gameCanvas = this.game.canvas;
+    const canvasRect = gameCanvas.getBoundingClientRect();
+    
+    // 计算缩放比例
+    const scaleX = canvasRect.width / this.game.config.width;
+    const scaleY = canvasRect.height / this.game.config.height;
+
+    // 创建表单容器
+    const formContainer = document.createElement('div');
+    formContainer.id = 'login-form-container';
+    formContainer.style.cssText = `
+      position: absolute;
+      left: ${canvasRect.left + centerX * scaleX - 160 * scaleX}px;
+      top: ${canvasRect.top + (centerY - 60) * scaleY}px;
+      width: ${320 * scaleX}px;
+      z-index: 1000;
+      font-family: serif;
+    `;
 
     // Tab 切换
-    let isLogin = true;
-    const tabLogin = this.add.text(centerX - 60, panelY + 15, '登录', {
-      fontSize: '18px', fill: '#FFD700', fontFamily: 'serif',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const tabContainer = document.createElement('div');
+    tabContainer.style.cssText = `
+      display: flex;
+      justify-content: center;
+      gap: ${20 * scaleX}px;
+      margin-bottom: ${15 * scaleY}px;
+    `;
 
-    const tabRegister = this.add.text(centerX + 60, panelY + 15, '注册', {
-      fontSize: '18px', fill: '#888888', fontFamily: 'serif',
-    }).setOrigin(0.5).setInteractive({ useHandCursor: true });
+    const tabLogin = document.createElement('span');
+    tabLogin.id = 'tab-login';
+    tabLogin.textContent = '登录';
+    tabLogin.style.cssText = `
+      font-size: ${18 * scaleX}px;
+      color: #FFD700;
+      cursor: pointer;
+      padding: ${5 * scaleY}px ${15 * scaleX}px;
+    `;
 
-    const inputW = panelW - 60;
-    const inputX = panelX + 30;
+    const tabRegister = document.createElement('span');
+    tabRegister.id = 'tab-register';
+    tabRegister.textContent = '注册';
+    tabRegister.style.cssText = `
+      font-size: ${18 * scaleX}px;
+      color: #888888;
+      cursor: pointer;
+      padding: ${5 * scaleY}px ${15 * scaleX}px;
+    `;
 
-    // 用户名
-    this.add.text(inputX, panelY + 55, '用户名', { fontSize: '13px', fill: '#aaaaaa' });
-    const usernameBg = this.add.rectangle(inputX, panelY + 75, inputW, 36, 0x2a2a3e, 1)
-      .setOrigin(0).setStrokeStyle(1, 0x444466);
-    const usernameText = this.add.text(inputX + 10, panelY + 82, '', {
-      fontSize: '15px', fill: '#ffffff', fontFamily: 'monospace',
-    });
+    tabContainer.appendChild(tabLogin);
+    tabContainer.appendChild(tabRegister);
 
-    // 密码
-    this.add.text(inputX, panelY + 120, '密码', { fontSize: '13px', fill: '#aaaaaa' });
-    const passwordBg = this.add.rectangle(inputX, panelY + 140, inputW, 36, 0x2a2a3e, 1)
-      .setOrigin(0).setStrokeStyle(1, 0x444466);
-    const passwordText = this.add.text(inputX + 10, panelY + 147, '', {
-      fontSize: '15px', fill: '#ffffff', fontFamily: 'monospace',
-    });
+    // 输入面板
+    const panel = document.createElement('div');
+    panel.style.cssText = `
+      background: rgba(26, 26, 46, 0.95);
+      border: 2px solid #FFD700;
+      border-radius: ${8 * scaleX}px;
+      padding: ${20 * scaleX}px;
+    `;
+
+    // 用户名输入
+    const usernameLabel = document.createElement('div');
+    usernameLabel.textContent = '用户名';
+    usernameLabel.style.cssText = `
+      font-size: ${13 * scaleX}px;
+      color: #aaaaaa;
+      margin-bottom: ${5 * scaleY}px;
+    `;
+
+    const usernameInput = document.createElement('input');
+    usernameInput.type = 'text';
+    usernameInput.id = 'username-input';
+    usernameInput.placeholder = '请输入用户名';
+    usernameInput.style.cssText = `
+      width: 100%;
+      box-sizing: border-box;
+      padding: ${10 * scaleX}px;
+      font-size: ${15 * scaleX}px;
+      background: #2a2a3e;
+      border: 1px solid #444466;
+      border-radius: ${4 * scaleX}px;
+      color: #ffffff;
+      outline: none;
+      margin-bottom: ${15 * scaleY}px;
+    `;
+
+    // 密码输入
+    const passwordLabel = document.createElement('div');
+    passwordLabel.textContent = '密码';
+    passwordLabel.style.cssText = `
+      font-size: ${13 * scaleX}px;
+      color: #aaaaaa;
+      margin-bottom: ${5 * scaleY}px;
+    `;
+
+    const passwordInput = document.createElement('input');
+    passwordInput.type = 'password';
+    passwordInput.id = 'password-input';
+    passwordInput.placeholder = '请输入密码';
+    passwordInput.style.cssText = `
+      width: 100%;
+      box-sizing: border-box;
+      padding: ${10 * scaleX}px;
+      font-size: ${15 * scaleX}px;
+      background: #2a2a3e;
+      border: 1px solid #444466;
+      border-radius: ${4 * scaleX}px;
+      color: #ffffff;
+      outline: none;
+      margin-bottom: ${15 * scaleY}px;
+    `;
 
     // 状态消息
-    const statusText = this.add.text(centerX, panelY + 200, '', {
-      fontSize: '13px', fill: '#ff4444',
-    }).setOrigin(0.5);
+    const statusText = document.createElement('div');
+    statusText.id = 'status-text';
+    statusText.style.cssText = `
+      font-size: ${13 * scaleX}px;
+      color: #ff4444;
+      text-align: center;
+      min-height: ${20 * scaleY}px;
+      margin-bottom: ${10 * scaleY}px;
+    `;
 
     // 提交按钮
-    const btnW = 200;
-    const btnH = 42;
-    const btnBg = this.add.rectangle(centerX, panelY + 250, btnW, btnH, 0x8B4513, 1)
-      .setOrigin(0.5).setStrokeStyle(2, 0xFFD700).setInteractive({ useHandCursor: true });
-    const btnText = this.add.text(centerX, panelY + 250, '登录', {
-      fontSize: '16px', fill: '#FFD700', fontFamily: 'serif',
-    }).setOrigin(0.5);
+    const submitBtn = document.createElement('button');
+    submitBtn.id = 'submit-btn';
+    submitBtn.textContent = '登录';
+    submitBtn.style.cssText = `
+      width: 100%;
+      padding: ${12 * scaleX}px;
+      font-size: ${16 * scaleX}px;
+      font-family: serif;
+      background: #8B4513;
+      border: 2px solid #FFD700;
+      border-radius: ${4 * scaleX}px;
+      color: #FFD700;
+      cursor: pointer;
+    `;
 
-    // 输入状态
-    let activeInput = 'username';
-    let username = '';
-    let password = '';
+    panel.appendChild(usernameLabel);
+    panel.appendChild(usernameInput);
+    panel.appendChild(passwordLabel);
+    panel.appendChild(passwordInput);
+    panel.appendChild(statusText);
+    panel.appendChild(submitBtn);
 
-    // 高亮当前输入框
-    const updateHighlight = () => {
-      usernameBg.setStrokeStyle(1, activeInput === 'username' ? 0xFFD700 : 0x444466);
-      passwordBg.setStrokeStyle(1, activeInput === 'password' ? 0xFFD700 : 0x444466);
+    formContainer.appendChild(tabContainer);
+    formContainer.appendChild(panel);
+
+    // 添加到页面
+    document.body.appendChild(formContainer);
+
+    // 事件处理
+    let isLogin = true;
+
+    tabLogin.onclick = () => {
+      isLogin = true;
+      tabLogin.style.color = '#FFD700';
+      tabRegister.style.color = '#888888';
+      submitBtn.textContent = '登录';
+      statusText.textContent = '';
     };
 
-    // 点击切换输入框
-    usernameBg.on('pointerdown', () => { activeInput = 'username'; updateHighlight(); });
-    passwordBg.on('pointerdown', () => { activeInput = 'password'; updateHighlight(); });
-
-    // Tab 切换
-    tabLogin.on('pointerdown', () => {
-      isLogin = true;
-      tabLogin.setColor('#FFD700');
-      tabRegister.setColor('#888888');
-      btnText.setText('登录');
-      statusText.setText('');
-    });
-    tabRegister.on('pointerdown', () => {
+    tabRegister.onclick = () => {
       isLogin = false;
-      tabRegister.setColor('#FFD700');
-      tabLogin.setColor('#888888');
-      btnText.setText('注册');
-      statusText.setText('');
-    });
+      tabRegister.style.color = '#FFD700';
+      tabLogin.style.color = '#888888';
+      submitBtn.textContent = '注册';
+      statusText.textContent = '';
+    };
 
-    // 键盘输入
-    this.input.keyboard.on('keydown', (event) => {
-      if (event.key === 'Tab') {
-        activeInput = activeInput === 'username' ? 'password' : 'username';
-        updateHighlight();
-        return;
-      }
-      if (event.key === 'Enter') {
-        btnBg.emit('pointerdown');
-        return;
-      }
-      if (event.key === 'Backspace') {
-        if (activeInput === 'username') username = username.slice(0, -1);
-        else password = password.slice(0, -1);
-      } else if (event.key.length === 1) {
-        if (activeInput === 'username' && username.length < 20) username += event.key;
-        else if (activeInput === 'password' && password.length < 20) password += event.key;
-      }
-      usernameText.setText(username || (activeInput === 'username' ? '|' : ''));
-      passwordText.setText(password ? '*'.repeat(password.length) : (activeInput === 'password' ? '|' : ''));
-    });
+    submitBtn.onclick = async () => {
+      const username = usernameInput.value.trim();
+      const password = passwordInput.value.trim();
 
-    // 提交
-    btnBg.on('pointerdown', async () => {
       if (!username || !password) {
-        statusText.setText('请输入用户名和密码');
+        statusText.textContent = '请输入用户名和密码';
+        statusText.style.color = '#ff4444';
         return;
       }
-      statusText.setText('处理中...');
-      statusText.setColor('#aaaaaa');
+
+      statusText.textContent = '处理中...';
+      statusText.style.color = '#aaaaaa';
 
       try {
         const endpoint = isLogin ? '/api/v1/auth/login' : '/api/v1/auth/register';
@@ -160,28 +235,34 @@ class MenuScene extends Phaser.Scene {
         });
         const data = await resp.json();
         if (!resp.ok) {
-          statusText.setText(data.error || '操作失败');
-          statusText.setColor('#ff4444');
+          statusText.textContent = data.error || '操作失败';
+          statusText.style.color = '#ff4444';
           return;
         }
         window.gameData.token = data.token;
         window.gameData.username = data.username;
         window.gameData.playerId = data.username;
-        statusText.setText('登录成功!');
-        statusText.setColor('#00ff00');
-        this.time.delayedCall(500, () => this.scene.start('CharacterSelectScene'));
+        statusText.textContent = '登录成功!';
+        statusText.style.color = '#00ff00';
+        
+        // 延迟跳转
+        setTimeout(() => {
+          this.scene.start('CharacterSelectScene');
+        }, 500);
       } catch (e) {
-        statusText.setText('网络错误: ' + e.message);
-        statusText.setColor('#ff4444');
+        statusText.textContent = '网络错误: ' + e.message;
+        statusText.style.color = '#ff4444';
       }
-    });
+    };
 
-    btnBg.on('pointerover', () => btnBg.setFillStyle(0xA0522D));
-    btnBg.on('pointerout', () => btnBg.setFillStyle(0x8B4513));
+    // 保存引用以便清理
+    this.formContainer = formContainer;
+  }
 
-    // 版本信息
-    this.add.text(10, height - 20, `v${GAME_VERSION}`, {
-      fontSize: '11px', fill: '#555555',
-    });
+  shutdown() {
+    // 清理HTML表单
+    if (this.formContainer && this.formContainer.parentNode) {
+      this.formContainer.parentNode.removeChild(this.formContainer);
+    }
   }
 }
